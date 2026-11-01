@@ -1,0 +1,22 @@
+{
+  "name": "hac-codex-manager",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "tauri": "tauri",
+    "test": "vitest run",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features"
+  },
+  "dependencies": { "@tauri-apps/api": "^2.0.0" },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.0.0",
+    "vitest": "^5.0.5",
+    "jsdom": "^26.1.0"
+  }
+}
