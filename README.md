@@ -72,3 +72,11 @@ Tham chiếu cấu hình: [OpenAI Codex Configuration Reference](https://develop
 Source và lịch sử Git công khai không chứa domain thực. Không dùng tiền tố `VITE_` nên URL không bị đưa vào JavaScript frontend. URL vẫn được nhúng trong binary Rust và ghi vào config Codex; người có ứng dụng hoặc quyền đọc cấu hình/lưu lượng mạng vẫn có thể tìm thấy domain. `.env` không phải cơ chế giấu endpoint khỏi người dùng cuối.
 
 Đặt GitHub Actions secret `HAC_BASE_URL` trong repository để đóng gói ZIP portable với endpoint thực. CI kiểm thử với URL mẫu; bước đóng gói trên push/workflow_dispatch dùng secret, không chạy trên pull request. Nếu chưa có secret, workflow chỉ kiểm thử và bỏ qua đóng gói. Không tải artifact CI lên nơi công khai nếu không muốn domain có thể bị trích xuất từ binary.
+
+## Gỡ thiết lập HAC
+
+Nút **Gỡ thiết lập HAC** yêu cầu xác nhận trước khi xóa key trong kho khóa, xóa biến môi trường user/launchctl, dừng LaunchAgent và khôi phục các file đã thay đổi. Bản mới lưu `.hac-restore.json` trong CODEX_HOME (quyền Unix 0600), chứa nội dung file trước/sau, đường dẫn backup và thư mục đã tạo; không chứa API key mới. Nội dung file cũ có thể đã chứa dữ liệu nhạy cảm, nên bảo vệ nhật ký như backup. Khi đổi key, vẫn giữ snapshot trước lần cài đầu tiên. Gỡ sẽ xóa nhật ký, backup được quản lý và thư mục do HAC tạo nếu còn rỗng. Giữ file khóa `.hac-setup.lock` để tránh race giữa các tiến trình; không tự xóa binary đang chạy hoặc dữ liệu WebView của hệ điều hành. Theme preference được xóa sau khi gỡ thành công.
+
+Nếu file đã được sửa ngoài HAC, thao tác dừng trước khi xóa key; đối chiếu/khôi phục backup thủ công rồi thử lại. Mở ứng dụng với cùng CODEX_HOME/ZDOTDIR/XDG_CONFIG_HOME đã dùng khi thiết lập. Cấu hình từ bản cũ không có nhật ký: chỉ khôi phục backup duy nhất khi nội dung hiện tại khớp; nhiều backup hoặc chỉnh sửa mới sẽ chặn gỡ. Nếu không có backup, chỉ loại mục HAC xác định được; không thể tái tạo các giá trị trước đây (ví dụ memories/profile mặc định), nên không khẳng định khôi phục hoàn toàn. Bản mới yêu cầu gỡ bản cũ trước khi thiết lập lại để không tạo snapshot sai.
+
+Gỡ không xóa Codex, auth.json, hội thoại, dự án hoặc toàn bộ thư mục .codex. Đóng rồi mở lại Codex và terminal để loại key còn trong môi trường của tiến trình cũ. Nếu lỗi trong lúc gỡ, HAC thử khôi phục trạng thái trước thao tác và báo nếu khôi phục chưa đầy đủ.

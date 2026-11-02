@@ -97,3 +97,19 @@ it('persists the selected theme and restores it on mount', () => {
   expect(document.querySelector<HTMLSelectElement>('#theme')!.value).toBe('dark');
   localStorage.clear();
 });
+
+it('requires confirmation before removing HAC and clears the entered key', async () => {
+  const show = vi.fn(); const close = vi.fn();
+  HTMLDialogElement.prototype.showModal = show;
+  HTMLDialogElement.prototype.close = close;
+  const invoke = vi.fn().mockImplementation((command: string) => Promise.resolve(command === 'uninstall' ? 'Đã gỡ HAC.' : empty));
+  mount(document.querySelector('#app')!, { desktop: true, invoke }); await tick();
+  input().value = 'fake-secret';
+  button('remove').click();
+  expect(show).toHaveBeenCalledOnce();
+  expect(invoke.mock.calls.filter(([name]) => name === 'uninstall')).toHaveLength(0);
+  button('confirm-remove').click(); await tick();
+  expect(invoke.mock.calls.filter(([name]) => name === 'uninstall')).toHaveLength(1);
+  expect(input().value).toBe('');
+  expect(document.querySelector('#message')!.textContent).toBe('Đã gỡ HAC.');
+});

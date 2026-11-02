@@ -13,9 +13,14 @@ async fn setup(request: hac_core::SetupRequest) -> Result<hac_core::SetupResult,
     hac_core::setup(request).await
 }
 
+#[tauri::command]
+async fn uninstall() -> Result<String, String> {
+    hac_core::uninstall().await
+}
+
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_status, setup])
+        .invoke_handler(tauri::generate_handler![get_status, setup, uninstall])
         .run(tauri::generate_context!())
         .expect("Không khởi động được HAC");
 }

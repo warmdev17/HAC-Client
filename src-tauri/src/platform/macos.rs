@@ -77,11 +77,17 @@ impl System for NativeSystem {
     fn deactivate(&self, home: &Path) -> Result<(), String> {
         let domain = domain()?;
         let path = mac_files::agent_path(home);
-        let _ = launch(&[
-            "bootout",
-            &domain,
-            path.to_str().ok_or("Đường dẫn không hợp lệ")?,
-        ]);
+        let service = format!("{domain}/com.hac.codexmanager.environment");
+        if launch(&["print", &service]).is_ok() {
+            launch(&[
+                "bootout",
+                &domain,
+                path.to_str().ok_or("Đường dẫn không hợp lệ")?,
+            ])?;
+            if launch(&["print", &service]).is_ok() {
+                return Err("LaunchAgent HAC vẫn đang được nạp; chưa thể gỡ.".into());
+            }
+        }
         Ok(())
     }
 }

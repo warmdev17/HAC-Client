@@ -150,3 +150,7 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline-colo
   .workspace { flex: none; min-height: auto; }
 }
 @media (max-width: 760px) { .workspace { grid-template-columns: 1fr; } .brand-context, .platform { display: none; } }
+
+/* WebView2 inserts its own reveal button unless this pseudo-element is hidden. */
+#api-key::-ms-reveal, #api-key::-ms-clear { display: none; }
+.danger { color: var(--red); margin-right: 12px; }

@@ -1,6 +1,7 @@
 pub mod config;
 pub mod files;
 pub mod platform;
+pub mod uninstall;
 
 use files::Change;
 use platform::{NativeSystem, System};
@@ -157,6 +158,25 @@ fn apply(
         Change::text(codex.join("hac.config.toml"), |s| config::render(s, true))?,
     ];
     changes.extend(system.changes(user)?);
+    // Do not invent a pre-install baseline when upgrading an installation without a journal.
+    if files::read(&codex.join(".hac-restore.json"))?.is_none()
+        && changes
+            .first()
+            .and_then(|c| c.before.as_ref())
+            .is_some_and(|b| {
+                std::str::from_utf8(b).is_ok_and(|s| {
+                    s.parse::<toml_edit::DocumentMut>().is_ok_and(|d| {
+                        d.get("model_providers")
+                            .and_then(|p| p.get("hac"))
+                            .is_some()
+                            || d.get("model_provider").and_then(toml_edit::Item::as_str)
+                                == Some("hac")
+                    })
+                })
+            })
+    {
+        return Err("Cấu hình HAC cũ chưa có nhật ký. Dùng Gỡ thiết lập HAC trước khi cài lại để không mất backup gốc.".into());
+    }
     let old_key = system.key()?.map(Zeroizing::new);
     let old_env = system.environment()?.map(Zeroizing::new);
     let was_persistent = system.persistence_ready(user)?;
@@ -166,6 +186,7 @@ fn apply(
             backups.push(path.display().to_string());
         }
     }
+    changes.push(uninstall::journal_change(codex, &changes, &backups)?);
     let mut applied = 0;
     let mut key_attempted = false;
     let mut env_attempted = false;
@@ -240,21 +261,7 @@ pub async fn setup(request: SetupRequest) -> Result<SetupResult, String> {
         }
         let codex = codex_home()?;
         let user = dirs::home_dir().ok_or("Không tìm được thư mục home")?;
-        // One writer per user, even if multiple HAC processes or CODEX_HOME directories exist.
-        let lock_path = user.join(".hac-setup.lock");
-        let _ = files::read(&lock_path)?; // Reject symlinks before opening the lock file.
-        let mut options = OpenOptions::new();
-        options.create(true).read(true).write(true).truncate(false);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let lock = options
-            .open(lock_path)
-            .map_err(|_| "Không khóa được phiên thiết lập HAC")?;
-        lock.try_lock()
-            .map_err(|_| "Một phiên HAC khác đang thiết lập. Hãy đợi rồi thử lại.")?;
+        let _lock = setup_lock(&user)?;
         apply(&NativeSystem, &codex, &user, key)
     };
     #[cfg(feature = "desktop")]
@@ -262,6 +269,43 @@ pub async fn setup(request: SetupRequest) -> Result<SetupResult, String> {
         tauri::async_runtime::spawn_blocking(work)
             .await
             .map_err(|_| "Thiết lập bị gián đoạn. Kiểm tra cấu hình và bản sao lưu.")?
+    }
+    #[cfg(not(feature = "desktop"))]
+    {
+        work()
+    }
+}
+
+fn setup_lock(user: &Path) -> Result<std::fs::File, String> {
+    // One writer per user, even if multiple HAC processes or CODEX_HOME directories exist.
+    let lock_path = user.join(".hac-setup.lock");
+    let _ = files::read(&lock_path)?; // Reject symlinks before opening the lock file.
+    let mut options = OpenOptions::new();
+    options.create(true).read(true).write(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let lock = options
+        .open(lock_path)
+        .map_err(|_| "Không khóa được phiên thiết lập HAC")?;
+    lock.try_lock()
+        .map_err(|_| "Một phiên HAC khác đang thiết lập. Hãy đợi rồi thử lại.")?;
+    Ok(lock)
+}
+
+pub async fn uninstall() -> Result<String, String> {
+    let work = || {
+        let user = dirs::home_dir().ok_or("Không tìm được thư mục home")?;
+        let _lock = setup_lock(&user)?;
+        uninstall::remove(&NativeSystem, &codex_home()?, &user)
+    };
+    #[cfg(feature = "desktop")]
+    {
+        tauri::async_runtime::spawn_blocking(work)
+            .await
+            .map_err(|_| "Gỡ bị gián đoạn; kiểm tra trạng thái trước khi thử lại")?
     }
     #[cfg(not(feature = "desktop"))]
     {
@@ -426,5 +470,76 @@ mod tests {
     fn frontend_camel_case_request_is_accepted() {
         let request: SetupRequest = serde_json::from_str(r#"{"apiKey":"fake-key"}"#).unwrap();
         assert_eq!(request.api_key, "fake-key");
+    }
+
+    #[test]
+    fn uninstall_restores_original_after_key_rotation_and_removes_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex = dir.path().join(".codex");
+        fs::create_dir(&codex).unwrap();
+        let original = "# user config\nmodel = 'original'\n[memories]\nuse_memories = false\n";
+        fs::write(codex.join("config.toml"), original).unwrap();
+        let system = MockSystem::default();
+        apply(&system, &codex, dir.path(), Zeroizing::new("first".into())).unwrap();
+        apply(&system, &codex, dir.path(), Zeroizing::new("second".into())).unwrap();
+        uninstall::remove(&system, &codex, dir.path()).unwrap();
+        assert_eq!(
+            fs::read_to_string(codex.join("config.toml")).unwrap(),
+            original
+        );
+        assert_eq!(fs::read_dir(&codex).unwrap().count(), 1);
+        assert!(!dir.path().join("startup").exists());
+        assert!(system.key.borrow().is_none());
+        assert!(system.env.borrow().is_none());
+    }
+
+    #[test]
+    fn uninstall_refuses_new_user_edits_without_removing_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex = dir.path().join(".codex");
+        let system = MockSystem::default();
+        apply(&system, &codex, dir.path(), Zeroizing::new("secret".into())).unwrap();
+        let path = codex.join("config.toml");
+        let updated = format!("{}\n# new user edit\n", fs::read_to_string(&path).unwrap());
+        fs::write(&path, &updated).unwrap();
+        assert!(uninstall::remove(&system, &codex, dir.path()).is_err());
+        assert_eq!(fs::read_to_string(path).unwrap(), updated);
+        assert_eq!(system.key.borrow().as_deref(), Some("secret"));
+    }
+
+    #[test]
+    fn failed_uninstall_restores_credentials_and_can_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex = dir.path().join(".codex");
+        let system = MockSystem::default();
+        apply(&system, &codex, dir.path(), Zeroizing::new("secret".into())).unwrap();
+        system.fail.replace(Some("credential"));
+        assert!(uninstall::remove(&system, &codex, dir.path()).is_err());
+        assert_eq!(system.env.borrow().as_deref(), Some("secret"));
+        assert!(codex.join(".hac-restore.json").exists());
+        uninstall::remove(&system, &codex, dir.path()).unwrap();
+        assert!(!codex.exists());
+    }
+
+    #[test]
+    fn legacy_install_restores_single_backup_but_rejects_ambiguous_backups() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex = dir.path();
+        let original = "model = 'before-hac'\n";
+        fs::write(
+            codex.join("config.toml"),
+            config::render(original, false).unwrap(),
+        )
+        .unwrap();
+        fs::write(codex.join("config.toml.hac-backup-one"), original).unwrap();
+        fs::write(codex.join("config.toml.hac-backup-two"), original).unwrap();
+        let system = MockSystem::default();
+        assert!(uninstall::remove(&system, codex, codex).is_err());
+        fs::remove_file(codex.join("config.toml.hac-backup-two")).unwrap();
+        uninstall::remove(&system, codex, codex).unwrap();
+        assert_eq!(
+            fs::read_to_string(codex.join("config.toml")).unwrap(),
+            original
+        );
     }
 }

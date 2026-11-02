@@ -34,9 +34,11 @@ export function mount(app: HTMLElement, bridge: Bridge) {
         </ul>
         <button id="refresh" class="secondary refresh" type="button" ${bridge.desktop ? '' : 'disabled'}>Kiểm tra cấu hình</button>
         <div class="location"><span>Thư mục cấu hình</span><code id="codex-home">Chưa xác định</code><small>Tự nhận CODEX_HOME nếu đã đặt.</small></div>
+        <button id="remove" type="button" class="secondary danger" disabled>Gỡ thiết lập HAC</button>
         <button id="show-info" type="button" class="secondary">Các thay đổi khi thiết lập</button>
       </aside></div>
       <section id="feedback" class="feedback" aria-live="polite" aria-atomic="true" hidden><p id="message"></p><button id="show-result" class="secondary" type="button">Xem chi tiết</button></section>
+      <dialog id="remove-dialog" aria-labelledby="remove-title"><h2 id="remove-title">Gỡ thiết lập HAC?</h2><p>Xóa API key của HAC trong kho khóa và biến môi trường, dừng LaunchAgent, khôi phục file từ nhật ký/backup và xóa backup được quản lý. Không xóa Codex, hội thoại hoặc dự án.</p><p>File đã sửa thêm sẽ chặn thao tác để tránh mất dữ liệu. Với bản HAC cũ thiếu nhật ký, chỉ gỡ những mục xác định được. Đóng Codex và terminal trước khi gỡ.</p><form method="dialog"><button id="cancel-remove" class="secondary" autofocus>Hủy</button> <button id="confirm-remove" type="button" class="primary">Gỡ thiết lập</button></form></dialog>
       <dialog id="info-dialog" aria-labelledby="info-title"><h2 id="info-title">Các thay đổi khi thiết lập</h2>        <p>Sao lưu file cũ cạnh file gốc trước khi cập nhật. Giữ cài đặt không liên quan; thay provider HAC và bỏ profile mặc định cũ để cấu hình mới có hiệu lực.</p><p>Trên macOS: tạo LaunchAgent và thêm đoạn nạp key vào zsh, bash, fish. Trên Windows: đặt biến môi trường cấp người dùng, không cần quyền admin.</p>
 <form method="dialog"><button class="primary">Đóng</button></form></dialog>
       <dialog id="result-dialog" aria-labelledby="result-title"><h2 id="result-title">Chi tiết thiết lập</h2><p id="full-message"></p><ul id="issues"></ul><section id="backup-details" hidden><h3>Các bản sao lưu</h3><ul id="backups"></ul></section><form method="dialog"><button class="primary">Đóng</button></form></dialog>
@@ -62,6 +64,7 @@ export function mount(app: HTMLElement, bridge: Bridge) {
 
   function controls() {
     const supported = bridge.desktop && status?.supported === true;
+    el<HTMLButtonElement>('remove').disabled = busy || !supported;
     input.disabled = busy || !supported;
     save.disabled = busy || !supported;
     refresh.disabled = busy || !bridge.desktop;
@@ -134,6 +137,24 @@ export function mount(app: HTMLElement, bridge: Bridge) {
       message('Đã thiết lập HAC. Đóng hoàn toàn rồi mở lại Codex Desktop và terminal. Cấu hình đã được kiểm tra cục bộ; chưa xác minh kết nối API.');
       try { await readStatus(); } catch { message('Đã lưu cấu hình nhưng chưa đọc lại được trạng thái. Bấm Kiểm tra cấu hình; mở lại Codex và terminal để nhận biến mới.', true); }
     } catch (error) { clearKey(); message(errorText(error), true); }
+    finally { busy = false; controls(); }
+  });
+  el('remove').addEventListener('click', () => {
+    if (!busy && status?.supported) el<HTMLDialogElement>('remove-dialog').showModal();
+  });
+  el('confirm-remove').addEventListener('click', async () => {
+    if (busy || !status?.supported) return;
+    el<HTMLDialogElement>('remove-dialog').close();
+    busy = true; controls(); clearKey();
+    el('issues').replaceChildren(); el('backups').replaceChildren(); el('backup-details').hidden = true;
+    message('Đang gỡ thiết lập HAC…');
+    try {
+      const result = await bridge.invoke<string>('uninstall');
+      message(result);
+      try { localStorage.removeItem('hac-theme'); } catch { /* optional preference */ }
+      theme.value = 'system'; applyTheme();
+      await readStatus();
+    } catch (error) { message(errorText(error), true); }
     finally { busy = false; controls(); }
   });
   refresh.addEventListener('click', async () => {
