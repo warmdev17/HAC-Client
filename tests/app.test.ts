@@ -84,3 +84,16 @@ describe('HAC setup', () => {
     expect(document.querySelector('#codex-home')!.textContent).toContain('<img');
   });
 });
+
+it('persists the selected theme and restores it on mount', () => {
+  localStorage.clear();
+  mount(document.querySelector('#app')!, { desktop: false, invoke: vi.fn() });
+  const theme = document.querySelector<HTMLSelectElement>('#theme')!;
+  expect(theme.value).toBe('system');
+  theme.value = 'dark'; theme.dispatchEvent(new Event('change'));
+  expect(document.documentElement.dataset.theme).toBe('dark');
+  expect(localStorage.getItem('hac-theme')).toBe('dark');
+  mount(document.querySelector('#app')!, { desktop: false, invoke: vi.fn() });
+  expect(document.querySelector<HTMLSelectElement>('#theme')!.value).toBe('dark');
+  localStorage.clear();
+});

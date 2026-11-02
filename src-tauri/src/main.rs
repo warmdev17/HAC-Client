@@ -1,3 +1,8 @@
+#![cfg_attr(
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
+)]
+
 #[tauri::command]
 async fn get_status() -> Result<hac_core::SetupStatus, String> {
     hac_core::get_status().await

@@ -10,10 +10,30 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [{ "title": "HAC — Thiết lập Codex", "width": 1020, "height": 800, "minWidth": 640, "minHeight": 680 }],
+    "windows": [
+      {
+        "title": "HAC — Thiết lập Codex",
+        "width": 1000,
+        "height": 780,
+        "minWidth": 1000,
+        "minHeight": 760
+      }
+    ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'self'; form-action 'none'"
     }
   },
-  "bundle": { "active": true, "targets": "all", "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.icns", "icons/icon.ico"], "macOS": { "minimumSystemVersion": "11.0" } }
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  }
 }

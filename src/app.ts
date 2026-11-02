@@ -14,8 +14,8 @@ export function mount(app: HTMLElement, bridge: Bridge) {
   let busy = false;
   app.innerHTML = `
     <main class="shell">
-      <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">H</span><strong>HAC</strong><span class="brand-context">Thiết lập Codex</span></div><span id="platform" class="platform">${bridge.desktop ? 'Đang kiểm tra…' : 'Bản xem trước'}</span></header>
-      <section class="intro"><div><h1>Một API key.<br>Codex ở mọi nơi.</h1><p>Kết nối Codex Desktop và CLI với nhà cung cấp HAC.<br class="wide-only"> Thiết lập một lần, sẵn sàng cho những phiên làm việc tiếp theo.</p></div><div class="destinations" aria-label="Dùng cho Codex Desktop và CLI"><div><span class="device" aria-hidden="true">▣</span><span>Codex Desktop</span></div><div><span class="device terminal" aria-hidden="true">&gt;_</span><span>Codex CLI</span></div></div></section>
+      <header class="topbar"><div class="brand"><span class="brand-mark" aria-hidden="true">H</span><strong>HAC</strong><span class="brand-context">Thiết lập Codex</span></div><select id="theme" aria-label="Giao diện"><option value="system">Theo hệ thống</option><option value="dark">Tối · Mocha</option><option value="light">Sáng · Latte</option></select><span id="platform" class="platform">${bridge.desktop ? 'Đang kiểm tra…' : 'Bản xem trước'}</span></header>
+      <section class="intro"><div><h1>Thiết lập Codex với HAC</h1><p>Một API key cho Codex Desktop và CLI.</p></div></section>
       <div class="workspace"><section class="setup-panel" aria-labelledby="connection-title">
         <div class="section-heading"><h2 id="connection-title">Kết nối HAC</h2><span class="private-label">${shield} Kho khóa hệ điều hành</span></div>
         <form id="setup-form">
@@ -34,13 +34,27 @@ export function mount(app: HTMLElement, bridge: Bridge) {
         </ul>
         <button id="refresh" class="secondary refresh" type="button" ${bridge.desktop ? '' : 'disabled'}>Kiểm tra cấu hình</button>
         <div class="location"><span>Thư mục cấu hình</span><code id="codex-home">Chưa xác định</code><small>Tự nhận CODEX_HOME nếu đã đặt.</small></div>
-        <details class="details"><summary>Các thay đổi khi thiết lập</summary><p>Sao lưu file cũ cạnh file gốc trước khi cập nhật. Giữ cài đặt không liên quan; thay provider HAC và bỏ profile mặc định cũ để cấu hình mới có hiệu lực.</p><p>Trên macOS: tạo LaunchAgent và thêm đoạn nạp key vào zsh, bash, fish. Trên Windows: đặt biến môi trường cấp người dùng, không cần quyền admin.</p></details>
+        <button id="show-info" type="button" class="secondary">Các thay đổi khi thiết lập</button>
       </aside></div>
-      <section id="feedback" class="feedback" aria-live="polite" aria-atomic="true" hidden><p id="message"></p><ul id="issues"></ul><details id="backup-details" hidden><summary>Xem các bản sao lưu</summary><ul id="backups"></ul></details></section>
+      <section id="feedback" class="feedback" aria-live="polite" aria-atomic="true" hidden><p id="message"></p><button id="show-result" class="secondary" type="button">Xem chi tiết</button></section>
+      <dialog id="info-dialog" aria-labelledby="info-title"><h2 id="info-title">Các thay đổi khi thiết lập</h2>        <p>Sao lưu file cũ cạnh file gốc trước khi cập nhật. Giữ cài đặt không liên quan; thay provider HAC và bỏ profile mặc định cũ để cấu hình mới có hiệu lực.</p><p>Trên macOS: tạo LaunchAgent và thêm đoạn nạp key vào zsh, bash, fish. Trên Windows: đặt biến môi trường cấp người dùng, không cần quyền admin.</p>
+<form method="dialog"><button class="primary">Đóng</button></form></dialog>
+      <dialog id="result-dialog" aria-labelledby="result-title"><h2 id="result-title">Chi tiết thiết lập</h2><p id="full-message"></p><ul id="issues"></ul><section id="backup-details" hidden><h3>Các bản sao lưu</h3><ul id="backups"></ul></section><form method="dialog"><button class="primary">Đóng</button></form></dialog>
       <footer><span>HAC · Công cụ cấu hình độc lập</span><span>Cấu hình cục bộ ≠ kết nối API đã xác minh</span></footer>
     </main>`;
 
   const el = <T extends HTMLElement>(id: string) => app.querySelector<T>(`#${id}`)!;
+  const theme = el<HTMLSelectElement>('theme');
+  try { theme.value = localStorage.getItem('hac-theme') ?? 'system'; } catch { /* Storage may be unavailable. */ }
+  if (!['system', 'dark', 'light'].includes(theme.value)) theme.value = 'system';
+  const applyTheme = () => { document.documentElement.dataset.theme = theme.value; };
+  applyTheme();
+  theme.addEventListener('change', () => {
+    applyTheme();
+    try { localStorage.setItem('hac-theme', theme.value); } catch { /* Session preference still works. */ }
+  });
+  el('show-info').addEventListener('click', () => el<HTMLDialogElement>('info-dialog').showModal());
+  el('show-result').addEventListener('click', () => el<HTMLDialogElement>('result-dialog').showModal());
   const input = el<HTMLInputElement>('api-key');
   const save = el<HTMLButtonElement>('save');
   const refresh = el<HTMLButtonElement>('refresh');
@@ -60,6 +74,8 @@ export function mount(app: HTMLElement, bridge: Bridge) {
     el('feedback').hidden = false;
     el('feedback').classList.toggle('error', error);
     el('message').textContent = text;
+    el('full-message').textContent = text;
+    el('message').title = text;
   }
   function displayStatus(next: Status) {
     status = next;
@@ -67,10 +83,11 @@ export function mount(app: HTMLElement, bridge: Bridge) {
     const os = labels[next.platform] ?? next.platform;
     el('platform').textContent = next.supported ? os : `${os} · Chưa hỗ trợ`;
     el('codex-home').textContent = next.codexHome;
+    el('codex-home').title = next.codexHome;
     el('os-note').textContent = next.platform === 'windows'
-      ? 'Để Codex mở độc lập, key được lưu thêm trong biến môi trường user (Registry), ngoài Credential Manager. Đóng và mở lại Codex và terminal sau khi thiết lập; nếu chưa nhận biến, đăng xuất rồi đăng nhập.'
+      ? 'Windows lưu thêm key dạng văn bản trong biến môi trường user (Registry). Mở lại Codex và terminal sau khi thiết lập.'
       : next.platform === 'macos'
-        ? 'Keychain lưu key; launchctl cấp key cho ứng dụng mới. HAC tạo LaunchAgent và đoạn nạp cho zsh, bash, fish. macOS có thể hỏi quyền truy cập Keychain.'
+        ? 'Key được lưu trong Keychain và nạp vào môi trường khi đăng nhập/mở shell. macOS có thể hỏi quyền truy cập Keychain.'
         : 'Bản này chỉ thiết lập trên macOS và Windows native. Linux và WSL chưa được hỗ trợ.';
     const checks: [string, boolean][] = [['config', next.configReady], ['profile', next.profileReady], ['key', next.keychainReady], ['env', next.environmentReady && next.persistenceReady]];
     checks.forEach(([id, ready]) => {

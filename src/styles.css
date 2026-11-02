@@ -79,3 +79,74 @@ footer { display: flex; justify-content: space-between; gap: 16px; color: #60778
   .setup-panel, .status-panel { padding: 20px 17px; } .actions { gap: 12px; } .primary { padding: 12px 13px; }
   footer { flex-direction: column; gap: 4px; }
 }
+/* Catppuccin Latte / Mocha. Shared semantic tokens keep both themes consistent. */
+:root {
+  color-scheme: light;
+  --base: #eff1f5; --mantle: #e6e9ef; --surface: #ccd0da;
+  --ink: #4c4f69; --muted: #5c5f77; --blue: #1e66f5;
+  --line: #bcc0cc; --green: #277c0b; --red: #d20f39; --on-blue: #ffffff;
+  background: var(--base); color: var(--ink);
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --base: #1e1e2e; --mantle: #181825; --surface: #313244;
+  --ink: #cdd6f4; --muted: #bac2de; --blue: #89b4fa;
+  --line: #45475a; --green: #a6e3a1; --red: #f38ba8; --on-blue: #1e1e2e;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) , :root[data-theme="system"] {
+    color-scheme: dark;
+    --base: #1e1e2e; --mantle: #181825; --surface: #313244;
+    --ink: #cdd6f4; --muted: #bac2de; --blue: #89b4fa;
+    --line: #45475a; --green: #a6e3a1; --red: #f38ba8; --on-blue: #1e1e2e;
+  }
+}
+html, body, #app { height: 100%; }
+body { background: var(--base); }
+.shell { height: 100dvh; display: flex; flex-direction: column; gap: 12px; padding: 0 24px 12px; }
+.topbar { height: 60px; flex: 0 0 60px; gap: 16px; }
+.brand { margin-right: auto; }
+.brand-mark { color: var(--on-blue); }
+.brand-context { border-color: var(--line); }
+#theme { background: var(--mantle); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 7px; font: inherit; font-size: 12px; }
+.intro { padding: 0; flex: 0 0 auto; }
+h1 { font-size: 26px; letter-spacing: -.6px; }
+.intro p { font-size: 12px; margin: 5px 0 0; }
+.workspace { flex: 1 1 auto; min-height: 0; background: var(--base); border-color: var(--line); grid-template-columns: minmax(0,1.4fr) minmax(300px,1fr); }
+.setup-panel, .status-panel { padding: 18px 20px; }
+.status-panel { background: var(--mantle); }
+.section-heading { margin-bottom: 14px; }
+h2 { font-size: 17px; }
+.key-input { background: var(--mantle); border-color: var(--line); }
+.key-input:focus-within { border-color: var(--blue); outline: 2px solid var(--blue); outline-offset: 2px; }
+.key-input input::placeholder { color: var(--muted); }
+.connection-details { margin: 14px 0 12px; }
+.connection-details > div { border-color: var(--line); padding: 6px 0; }
+.os-note { background: var(--mantle); color: var(--muted); border-color: var(--blue); }
+.actions { margin-top: 14px; }
+.primary { color: var(--on-blue); }
+.primary:hover:not(:disabled) { background: var(--blue); filter: brightness(.92); }
+.completion { background: var(--surface); }
+.status-list li { padding: 11px 0; border-color: var(--line); }
+.status-icon { color: var(--muted); border-color: var(--line); }
+.status-icon.ok { background: var(--surface); color: var(--green); border-color: var(--green); }
+.location { margin-top: 8px; padding-top: 12px; }
+.location code { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#show-info { margin-top: 8px; }
+.feedback, .feedback.error { flex: 0 0 auto; display: flex; align-items: center; gap: 14px; background: var(--mantle); color: var(--ink); border-color: var(--blue); padding: 10px 14px; margin: 0; }
+.feedback.error { border-color: var(--red); }
+#message { flex: 1; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#show-result { flex-shrink: 0; }
+footer { padding-top: 0; color: var(--muted); flex: 0 0 auto; }
+dialog { width: min(600px, calc(100vw - 40px)); max-height: calc(100dvh - 48px); overflow: auto; background: var(--base); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 24px; font-size: 14px; line-height: 1.65; overflow-wrap: anywhere; }
+dialog::backdrop { background: #11111bcc; }
+dialog form { margin-top: 18px; text-align: right; }
+dialog h3 { font-size: 14px; }
+button:focus-visible, summary:focus-visible, select:focus-visible { outline-color: var(--blue); }
+@media (min-width: 900px) and (min-height: 650px) { body { overflow: hidden; } }
+/* Preserve accessibility when zoom or a browser preview is smaller than the native minimum. */
+@media (max-width: 899px), (max-height: 649px) {
+  .shell { height: auto; min-height: 100dvh; }
+  .workspace { flex: none; min-height: auto; }
+}
+@media (max-width: 760px) { .workspace { grid-template-columns: 1fr; } .brand-context, .platform { display: none; } }
