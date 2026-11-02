@@ -1,4 +1,4 @@
-name: Validate and package HAC
+name: Validate and package HAC portable
 
 on:
   push:
@@ -13,7 +13,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        include:
+          - os: macos-latest
+            artifact: HAC-macOS-arm64-portable
+            build_args: --bundles app
+          - os: macos-15-intel
+            artifact: HAC-macOS-x64-portable
+            build_args: --bundles app
+          - os: windows-latest
+            artifact: HAC-Windows-x64-portable
+            build_args: --no-bundle
     runs-on: ${{ matrix.os }}
     env:
       HAC_BASE_URL: https://provider.example/v1
@@ -45,19 +54,35 @@ jobs:
           if [ -n "$HAC_BASE_URL" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
           else
-            echo "::notice::HAC_BASE_URL secret is missing; installer packaging skipped."
+            echo "::notice::HAC_BASE_URL secret is missing; portable packaging skipped."
           fi
-      - run: npm run tauri -- build
+      - name: Build portable application
+        run: npm run tauri -- build ${{ matrix.build_args }}
         if: steps.packaging.outputs.enabled == 'true'
         env:
           HAC_BASE_URL: ${{ secrets.HAC_BASE_URL }}
+      - name: Package Windows executable
+        if: steps.packaging.outputs.enabled == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force portable | Out-Null
+          $exe = 'src-tauri/target/release/hac-codex-manager.exe'
+          if (-not (Test-Path $exe)) { throw 'Application executable is missing' }
+          Compress-Archive -Path $exe -DestinationPath 'portable/${{ matrix.artifact }}.zip'
+      - name: Package macOS application
+        if: steps.packaging.outputs.enabled == 'true' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          mkdir -p portable
+          test -d src-tauri/target/release/bundle/macos/HAC.app
+          # Archive before upload-artifact to preserve executable modes and symlinks.
+          ditto -c -k --sequesterRsrc --keepParent \
+            src-tauri/target/release/bundle/macos/HAC.app \
+            'portable/${{ matrix.artifact }}.zip'
       - uses: actions/upload-artifact@v4
         if: steps.packaging.outputs.enabled == 'true'
         with:
-          name: HAC-${{ matrix.os }}
-          path: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
+          name: ${{ matrix.artifact }}
+          path: portable/*.zip
+          compression-level: 0
           if-no-files-found: error

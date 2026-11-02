@@ -19,7 +19,7 @@ npm run tauri -- dev
 npm run tauri -- build
 ```
 
-Installer nằm trong `src-tauri/target/release/bundle/`. Workflow GitHub Actions build trên macOS/Windows và lưu artifact; không tự phát hành. Chưa cấu hình chứng chỉ ký code/notarization. Muốn phân phối rộng rãi cần thêm chứng chỉ macOS/Windows vào CI. Bản macOS mặc định theo kiến trúc runner/máy build; dùng target phù hợp nếu cần Intel/Apple Silicon riêng.
+Installer nằm trong `src-tauri/target/release/bundle/`. Workflow GitHub Actions chỉ xuất ZIP portable (không tạo installer), gồm `HAC-Windows-x64-portable`, `HAC-macOS-arm64-portable` và `HAC-macOS-x64-portable`; không tự phát hành. Windows giải nén rồi mở `hac-codex-manager.exe` (cần WebView2 Runtime). macOS giải nén rồi mở `HAC.app`; ZIP tạo bằng `ditto` để giữ quyền thực thi và symlink. Artifact GitHub là ZIP bọc ngoài ZIP portable, nên có thể cần giải nén hai lần. Portable vẫn lưu cấu hình/key vào tài khoản người dùng khi bấm thiết lập. Chưa cấu hình chứng chỉ ký code/notarization. Muốn phân phối rộng rãi cần thêm chứng chỉ macOS/Windows vào CI. Bản macOS mặc định theo kiến trúc runner/máy build; dùng target phù hợp nếu cần Intel/Apple Silicon riêng.
 
 `npm run dev` mở bản xem trước web tại `http://127.0.0.1:1420`; chức năng ghi key/cấu hình bị khóa vì không có backend Tauri. Giao diện dùng font hệ thống, không tải font hoặc nội dung từ bên ngoài.
 
@@ -71,4 +71,4 @@ Tham chiếu cấu hình: [OpenAI Codex Configuration Reference](https://develop
 
 Source và lịch sử Git công khai không chứa domain thực. Không dùng tiền tố `VITE_` nên URL không bị đưa vào JavaScript frontend. URL vẫn được nhúng trong binary Rust và ghi vào config Codex; người có ứng dụng hoặc quyền đọc cấu hình/lưu lượng mạng vẫn có thể tìm thấy domain. `.env` không phải cơ chế giấu endpoint khỏi người dùng cuối.
 
-Đặt GitHub Actions secret `HAC_BASE_URL` trong repository để đóng gói installer với endpoint thực. CI kiểm thử với URL mẫu; bước đóng gói trên push/workflow_dispatch dùng secret, không chạy trên pull request. Nếu chưa có secret, workflow chỉ kiểm thử và bỏ qua đóng gói. Không tải artifact CI lên nơi công khai nếu không muốn domain có thể bị trích xuất từ binary.
+Đặt GitHub Actions secret `HAC_BASE_URL` trong repository để đóng gói ZIP portable với endpoint thực. CI kiểm thử với URL mẫu; bước đóng gói trên push/workflow_dispatch dùng secret, không chạy trên pull request. Nếu chưa có secret, workflow chỉ kiểm thử và bỏ qua đóng gói. Không tải artifact CI lên nơi công khai nếu không muốn domain có thể bị trích xuất từ binary.
