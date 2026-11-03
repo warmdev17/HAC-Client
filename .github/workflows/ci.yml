@@ -53,6 +53,9 @@ jobs:
         run: |
           if [ -n "$HAC_BASE_URL" ]; then
             echo "enabled=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "::error::HAC_BASE_URL secret is required for a release build."
+            exit 1
           else
             echo "::notice::HAC_BASE_URL secret is missing; portable packaging skipped."
           fi
@@ -86,3 +89,29 @@ jobs:
           path: portable/*.zip
           compression-level: 0
           if-no-files-found: error
+
+  release:
+    needs: desktop
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: HAC-*-portable
+          path: portable
+          merge-multiple: true
+      - name: Publish portable release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            portable/HAC-Windows-x64-portable.zip
+            portable/HAC-macOS-arm64-portable.zip
+            portable/HAC-macOS-x64-portable.zip
