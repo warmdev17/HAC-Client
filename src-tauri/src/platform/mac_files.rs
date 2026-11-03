@@ -1,8 +1,6 @@
 use crate::files::Change;
 use std::path::{Path, PathBuf};
 
-const START: &str = "# >>> HAC managed environment >>>";
-const END: &str = "# <<< HAC managed environment <<<";
 const SERVICE: &str = super::SERVICE;
 const ACCOUNT: &str = super::ACCOUNT;
 
@@ -22,16 +20,6 @@ fn xml(value: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-fn managed(input: &str, block: &str) -> Result<String, String> {
-    let starts: Vec<_> = input.match_indices(START).collect();
-    let ends: Vec<_> = input.match_indices(END).collect();
-    match (starts.as_slice(), ends.as_slice()) {
-        ([], []) => Ok(format!("{}{}{}\n{}\n{}\n", input, if input.is_empty() || input.ends_with('\n') { "" } else { "\n" }, START, block, END)),
-        ([(start, _)], [(end, _)]) if start < end => Ok(format!("{}{}\n{}\n{}{}", &input[..*start], START, block, END, &input[*end + END.len()..])),
-        _ => Err("Đoạn môi trường HAC trong shell config không hợp lệ. Sửa các dấu đánh dấu HAC rồi thử lại.".into()),
-    }
-}
-
 pub fn changes(home: &Path) -> Result<Vec<Change>, String> {
     // Never interpolate a key into a script, plist, shell config, or command line here.
     let shell = format!("if [ -z \"${{HAC_API_KEY:-}}\" ]; then\n  HAC_API_KEY=$(/usr/bin/security find-generic-password -s '{SERVICE}' -a '{ACCOUNT}' -w 2>/dev/null)\n  if [ -n \"$HAC_API_KEY\" ]; then export HAC_API_KEY; else unset HAC_API_KEY; fi\nfi");
@@ -42,35 +30,16 @@ pub fn changes(home: &Path) -> Result<Vec<Change>, String> {
         Change::text(helper_path(home), |_| Ok(helper))?,
         Change::text(agent_path(home), |_| Ok(plist))?,
     ];
-    // Respect zsh's custom startup directory when inherited by HAC.
-    let zsh_dir = std::env::var_os("ZDOTDIR")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| home.to_path_buf());
-    changes.push(Change::text(zsh_dir.join(".zshenv"), |s| {
-        managed(s, &shell)
-    })?);
-    changes.push(Change::text(home.join(".bashrc"), |s| managed(s, &shell))?);
-    // Bash reads only the first existing login file; do not shadow .bash_login/.profile.
-    let login = [".bash_profile", ".bash_login", ".profile"]
-        .iter()
-        .map(|n| home.join(n))
-        .find(|p| p.exists())
-        .unwrap_or_else(|| home.join(".bash_profile"));
-    changes.push(Change::text(login, |s| managed(s, &shell))?);
-    let fish_dir = std::env::var_os("XDG_CONFIG_HOME")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
-        .unwrap_or_else(|| home.join(".config"));
-    changes.push(Change::text(fish_dir.join("fish/conf.d/hac.fish"), |s| {
-        managed(s, &fish)
-    })?);
+    let (config, zsh) = super::shell::directories(home);
+    changes.extend(super::shell::changes(home, &config, &zsh, &shell, &fish)?);
     Ok(changes)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::shell::managed;
     use super::*;
+    const START: &str = "# >>> HAC managed environment >>>";
     #[test]
     fn managed_blocks_are_idempotent_and_keep_user_content() {
         let a = managed("# my shell\nalias ll='ls -l'", "first").unwrap();

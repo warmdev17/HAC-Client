@@ -174,7 +174,7 @@ fn write_state(path: &Path, bytes: &Option<Vec<u8>>) -> Result<(), String> {
 
 pub fn remove(system: &impl System, codex: &Path, user: &Path) -> Result<String, String> {
     if !system.supported() {
-        return Err("Chỉ hỗ trợ macOS và Windows native.".into());
+        return Err("Chỉ hỗ trợ macOS, Windows native và Linux desktop; không hỗ trợ WSL.".into());
     }
     let mut known = vec![
         Change::text(codex.join("config.toml"), |s| config::render(s, false))?,
@@ -254,7 +254,10 @@ pub fn remove(system: &impl System, codex: &Path, user: &Path) -> Result<String,
                     config::render(before_text, index == 1)?.into_bytes()
                 } else {
                     // A full backup may only replace an untouched managed shell block.
-                    if change.path.extension().is_some_and(|e| e == "plist")
+                    if change
+                        .path
+                        .extension()
+                        .is_some_and(|e| e == "plist" || e == "desktop")
                         || change
                             .path
                             .file_name()
@@ -285,7 +288,10 @@ pub fn remove(system: &impl System, codex: &Path, user: &Path) -> Result<String,
                 Some(before)
             } else if index < 2 {
                 strip_config(current, index == 1)?
-            } else if change.path.extension().is_some_and(|e| e == "plist")
+            } else if change
+                .path
+                .extension()
+                .is_some_and(|e| e == "plist" || e == "desktop")
                 || change
                     .path
                     .file_name()

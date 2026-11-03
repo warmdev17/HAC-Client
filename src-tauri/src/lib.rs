@@ -150,7 +150,9 @@ fn apply(
 ) -> Result<SetupResult, String> {
     validate_key(&key)?;
     if !system.supported() {
-        return Err("Bản HAC hiện hỗ trợ macOS và Windows native.".into());
+        return Err(
+            "Bản HAC hiện hỗ trợ macOS, Windows native và Linux desktop; không hỗ trợ WSL.".into(),
+        );
     }
     // Validate all files, including shell startup files, before touching the credential store.
     let mut changes = vec![
@@ -257,7 +259,10 @@ pub async fn setup(request: SetupRequest) -> Result<SetupResult, String> {
         let key = Zeroizing::new(request.api_key);
         validate_key(&key)?;
         if !NativeSystem.supported() {
-            return Err("Bản HAC hiện hỗ trợ macOS và Windows native.".into());
+            return Err(
+                "Bản HAC hiện hỗ trợ macOS, Windows native và Linux desktop; không hỗ trợ WSL."
+                    .into(),
+            );
         }
         let codex = codex_home()?;
         let user = dirs::home_dir().ok_or("Không tìm được thư mục home")?;
@@ -325,6 +330,7 @@ mod tests {
         env: RefCell<Option<String>>,
         fail: RefCell<Option<&'static str>>,
         calls: RefCell<Vec<&'static str>>,
+        linux_files: bool,
     }
     impl MockSystem {
         fn step(&self, name: &'static str) -> Result<(), String> {
@@ -357,6 +363,9 @@ mod tests {
             Ok(())
         }
         fn changes(&self, user: &Path) -> Result<Vec<Change>, String> {
+            if self.linux_files {
+                return platform::linux_files::changes_at(user, &user.join(".config"), user);
+            }
             Ok(vec![Change::text(user.join("startup"), |_| {
                 Ok("load key from OS store".into())
             })?])
@@ -365,6 +374,45 @@ mod tests {
             self.step("activate")
         }
     }
+    #[test]
+    fn linux_setup_rotation_removal_and_failed_setup_preserve_user_files() {
+        for failure in [
+            None,
+            Some("credential"),
+            Some("environment"),
+            Some("activate"),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let home = dir.path();
+            let codex = home.join(".codex");
+            let shell = "# custom shell\nalias ll='ls -l'\n";
+            fs::write(home.join(".bashrc"), shell).unwrap();
+            let system = MockSystem {
+                linux_files: true,
+                ..Default::default()
+            };
+            system.fail.replace(failure);
+            let result = apply(&system, &codex, home, Zeroizing::new("first-key".into()));
+            if failure.is_some() {
+                assert!(result.is_err());
+                assert!(system.key.borrow().is_none());
+                assert!(system.env.borrow().is_none());
+            } else {
+                result.unwrap();
+                apply(&system, &codex, home, Zeroizing::new("second-key".into())).unwrap();
+                assert!(inspect(&system, &codex, home).persistence_ready);
+                uninstall::remove(&system, &codex, home).unwrap();
+            }
+            assert_eq!(fs::read_to_string(home.join(".bashrc")).unwrap(), shell);
+            assert!(!home
+                .join(".config/autostart/hac-environment.desktop")
+                .exists());
+            assert!(!home.join(".config/hac/environment.sh").exists());
+            assert!(!home.join(".zshenv").exists());
+            assert!(!home.join(".config/fish/conf.d/hac.fish").exists());
+        }
+    }
+
     #[test]
     fn first_install_rotation_and_idempotent_reapply() {
         let dir = tempfile::tempdir().unwrap();

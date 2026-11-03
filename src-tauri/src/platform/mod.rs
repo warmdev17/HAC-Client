@@ -1,9 +1,16 @@
 use crate::files::Change;
 use std::path::Path;
 
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+mod shell;
+
 pub const SERVICE: &str = "com.hac.codexmanager";
 pub const ACCOUNT: &str = "HAC_API_KEY";
 
+#[cfg(any(target_os = "linux", test))]
+pub mod linux_files;
 #[cfg(any(target_os = "macos", test))]
 pub mod mac_files;
 #[cfg(target_os = "macos")]
@@ -29,22 +36,22 @@ pub trait System {
 
 pub struct NativeSystem;
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn entry() -> Result<keyring::Entry, String> {
     keyring::Entry::new(SERVICE, ACCOUNT)
         .map_err(|_| "Không mở được kho khóa của hệ điều hành".into())
 }
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn key() -> Result<Option<String>, String> {
     match entry()?.get_password() {
         Ok(key) => Ok(Some(key)),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(_) => Err(
-            "Không đọc được kho khóa. Hãy mở khóa Keychain/Credential Manager và thử lại.".into(),
+            "Không đọc được kho khóa. Hãy mở khóa Keychain/Credential Manager/Secret Service và thử lại.".into(),
         ),
     }
 }
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn save_key(key: Option<&str>) -> Result<(), String> {
     let entry = entry()?;
     let result = match key {
@@ -55,18 +62,18 @@ fn save_key(key: Option<&str>) -> Result<(), String> {
         Ok(()) | Err(keyring::Error::NoEntry) if key.is_none() => Ok(()),
         Ok(()) => Ok(()),
         Err(_) => Err(
-            "Không lưu được API key. Kiểm tra quyền truy cập Keychain/Credential Manager.".into(),
+            "Không lưu được API key. Kiểm tra quyền truy cập Keychain/Credential Manager/Secret Service.".into(),
         ),
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+#[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 impl System for NativeSystem {
     fn supported(&self) -> bool {
         false
     }
     fn key(&self) -> Result<Option<String>, String> {
-        Err("Bản này hỗ trợ macOS và Windows native.".into())
+        Err("Bản này hỗ trợ macOS, Windows native và Linux desktop; không hỗ trợ WSL.".into())
     }
     fn save_key(&self, _: Option<&str>) -> Result<(), String> {
         Err("Hệ điều hành chưa được hỗ trợ".into())

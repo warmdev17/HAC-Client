@@ -21,9 +21,9 @@ export function mount(app: HTMLElement, bridge: Bridge) {
         <form id="setup-form">
           <label for="api-key">API key</label>
           <div class="key-input"><input id="api-key" name="api-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="key-help" placeholder="Dán API key của bạn" maxlength="4096" required disabled /><button type="button" id="toggle-key" class="icon-button" aria-label="Hiện API key" aria-pressed="false">${eye}</button></div>
-          <p id="key-help" class="field-help">Lưu trong Keychain hoặc Credential Manager. Key không được ghi vào file TOML.</p>
+          <p id="key-help" class="field-help">Lưu trong Keychain, Credential Manager hoặc Secret Service. Key không được ghi vào file TOML.</p>
           <dl class="connection-details"><div><dt>Provider</dt><dd>HAC <span class="muted">/ Responses API</span></dd></div><div><dt>Base URL</dt><dd><span>Được cấu hình trong bản HAC này</span></dd></div><div><dt>Model</dt><dd><code>gpt-6-astra</code></dd></div><div><dt>Reasoning</dt><dd><span>Mặc định <strong>medium</strong></span><span>Profile hac <strong>high</strong></span></dd></div></dl>
-          <div id="os-note" class="os-note">Windows lưu thêm một bản key trong biến môi trường user (Registry). macOS nạp key từ Keychain khi đăng nhập và mở shell.</div>
+          <div id="os-note" class="os-note">Windows dùng môi trường user; macOS dùng Keychain; Linux dùng Secret Service và systemd user.</div>
           <div class="actions"><button class="primary" id="save" type="submit" disabled>Lưu và thiết lập HAC</button><button class="secondary" id="clear" type="button">Xóa ô nhập</button></div>
           <p class="local-note">Chỉ áp dụng trên máy này. Không gửi yêu cầu đến API.</p>
         </form>
@@ -38,8 +38,8 @@ export function mount(app: HTMLElement, bridge: Bridge) {
         <button id="show-info" type="button" class="secondary">Các thay đổi khi thiết lập</button>
       </aside></div>
       <section id="feedback" class="feedback" aria-live="polite" aria-atomic="true" hidden><p id="message"></p><button id="show-result" class="secondary" type="button">Xem chi tiết</button></section>
-      <dialog id="remove-dialog" aria-labelledby="remove-title"><h2 id="remove-title">Gỡ thiết lập HAC?</h2><p>Xóa API key của HAC trong kho khóa và biến môi trường, dừng LaunchAgent, khôi phục file từ nhật ký/backup và xóa backup được quản lý. Không xóa Codex, hội thoại hoặc dự án.</p><p>File đã sửa thêm sẽ chặn thao tác để tránh mất dữ liệu. Với bản HAC cũ thiếu nhật ký, chỉ gỡ những mục xác định được. Đóng Codex và terminal trước khi gỡ.</p><form method="dialog"><button id="cancel-remove" class="secondary" autofocus>Hủy</button> <button id="confirm-remove" type="button" class="primary">Gỡ thiết lập</button></form></dialog>
-      <dialog id="info-dialog" aria-labelledby="info-title"><h2 id="info-title">Các thay đổi khi thiết lập</h2>        <p>Sao lưu file cũ cạnh file gốc trước khi cập nhật. Giữ cài đặt không liên quan; thay provider HAC và bỏ profile mặc định cũ để cấu hình mới có hiệu lực.</p><p>Trên macOS: tạo LaunchAgent và thêm đoạn nạp key vào zsh, bash, fish. Trên Windows: đặt biến môi trường cấp người dùng, không cần quyền admin.</p>
+      <dialog id="remove-dialog" aria-labelledby="remove-title"><h2 id="remove-title">Gỡ thiết lập HAC?</h2><p>Xóa API key của HAC trong kho khóa và biến môi trường, gỡ cơ chế tự nạp, khôi phục file từ nhật ký/backup và xóa backup được quản lý. Không xóa Codex, hội thoại hoặc dự án.</p><p>File đã sửa thêm sẽ chặn thao tác để tránh mất dữ liệu. Với bản HAC cũ thiếu nhật ký, chỉ gỡ những mục xác định được. Đóng Codex và terminal trước khi gỡ.</p><form method="dialog"><button id="cancel-remove" class="secondary" autofocus>Hủy</button> <button id="confirm-remove" type="button" class="primary">Gỡ thiết lập</button></form></dialog>
+      <dialog id="info-dialog" aria-labelledby="info-title"><h2 id="info-title">Các thay đổi khi thiết lập</h2>        <p>Sao lưu file cũ cạnh file gốc trước khi cập nhật. Giữ cài đặt không liên quan; thay provider HAC và bỏ profile mặc định cũ để cấu hình mới có hiệu lực.</p><p>Trên macOS: tạo LaunchAgent và thêm đoạn nạp key vào zsh, bash, fish. Trên Windows: đặt biến môi trường cấp người dùng. Trên Linux: Secret Service, shell và XDG autostart nạp vào systemd user. Không cần quyền admin.</p>
 <form method="dialog"><button class="primary">Đóng</button></form></dialog>
       <dialog id="result-dialog" aria-labelledby="result-title"><h2 id="result-title">Chi tiết thiết lập</h2><p id="full-message"></p><ul id="issues"></ul><section id="backup-details" hidden><h3>Các bản sao lưu</h3><ul id="backups"></ul></section><form method="dialog"><button class="primary">Đóng</button></form></dialog>
       <footer><span>HAC · Công cụ cấu hình độc lập</span><span>Cấu hình cục bộ ≠ kết nối API đã xác minh</span></footer>
@@ -91,7 +91,9 @@ export function mount(app: HTMLElement, bridge: Bridge) {
       ? 'Windows lưu thêm key dạng văn bản trong biến môi trường user (Registry). Mở lại Codex và terminal sau khi thiết lập.'
       : next.platform === 'macos'
         ? 'Key được lưu trong Keychain và nạp vào môi trường khi đăng nhập/mở shell. macOS có thể hỏi quyền truy cập Keychain.'
-        : 'Bản này chỉ thiết lập trên macOS và Windows native. Linux và WSL chưa được hỗ trợ.';
+        : next.platform === 'linux'
+          ? 'Linux dùng Secret Service và systemd user. Mở terminal mới; ứng dụng ngoài systemd có thể cần chạy từ terminal này. Kho khóa cần được mở khi đăng nhập.'
+          : 'Hệ điều hành này chưa được hỗ trợ; không hỗ trợ WSL.';
     const checks: [string, boolean][] = [['config', next.configReady], ['profile', next.profileReady], ['key', next.keychainReady], ['env', next.environmentReady && next.persistenceReady]];
     checks.forEach(([id, ready]) => {
       el(`${id}-icon`).textContent = ready ? '✓' : '–';
@@ -169,7 +171,7 @@ export function mount(app: HTMLElement, bridge: Bridge) {
   });
   controls();
   if (!bridge.desktop) {
-    message('Đây là bản xem trước giao diện. Mở ứng dụng HAC trên macOS hoặc Windows để lưu key và thiết lập Codex.');
+    message('Đây là bản xem trước giao diện. Mở ứng dụng HAC trên macOS, Windows hoặc Linux desktop để lưu key và thiết lập Codex.');
   } else {
     void readStatus().then(next => {
       if (!next.supported) message('Hệ điều hành này chưa được hỗ trợ; HAC chưa thay đổi cấu hình nào.');

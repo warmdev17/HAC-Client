@@ -1,6 +1,6 @@
 # HAC — Thiết lập Codex
 
-Ứng dụng Tauri 2 + TypeScript cấu hình Codex Desktop và CLI bằng provider HAC trên **macOS và Windows native**. Linux chỉ dùng để phát triển giao diện/kiểm thử core; không ghi key hoặc áp dụng cấu hình. Không hỗ trợ WSL trong bản này.
+Ứng dụng Tauri 2 + TypeScript cấu hình Codex Desktop và CLI bằng provider HAC trên **macOS, Windows native và Linux desktop x64**. Linux cần Secret Service (GNOME Keyring hoặc KWallet có bật Secret Service), `secret-tool`, `systemctl`, `busctl` và phiên systemd user. Không hỗ trợ WSL trong bản này.
 
 ## Chạy và đóng gói
 
@@ -19,9 +19,21 @@ npm run tauri -- dev
 npm run tauri -- build
 ```
 
-Installer nằm trong `src-tauri/target/release/bundle/`. Workflow GitHub Actions chỉ xuất ZIP portable (không tạo installer), gồm `HAC-Windows-x64-portable`, `HAC-macOS-arm64-portable` và `HAC-macOS-x64-portable`; tự đính kèm vào GitHub Release khi push tag bắt đầu bằng `v`. Windows giải nén rồi mở `hac-codex-manager.exe` (cần WebView2 Runtime). macOS giải nén rồi mở `HAC.app`; ZIP tạo bằng `ditto` để giữ quyền thực thi và symlink. Artifact GitHub là ZIP bọc ngoài ZIP portable, nên có thể cần giải nén hai lần. Portable vẫn lưu cấu hình/key vào tài khoản người dùng khi bấm thiết lập. Chưa cấu hình chứng chỉ ký code/notarization. Muốn phân phối rộng rãi cần thêm chứng chỉ macOS/Windows vào CI. Bản macOS mặc định theo kiến trúc runner/máy build; dùng target phù hợp nếu cần Intel/Apple Silicon riêng.
+Installer nằm trong `src-tauri/target/release/bundle/`. Workflow GitHub Actions xuất ZIP portable cho macOS/Windows và TAR.GZ chứa AppImage cho Linux (không tạo installer), gồm `HAC-Windows-x64-portable`, `HAC-macOS-arm64-portable`, `HAC-macOS-x64-portable` và `HAC-Linux-x64-portable`; tự đính kèm vào GitHub Release khi push tag bắt đầu bằng `v`. Windows giải nén rồi mở `hac-codex-manager.exe` (cần WebView2 Runtime). macOS giải nén rồi mở `HAC.app`; ZIP tạo bằng `ditto` để giữ quyền thực thi và symlink. Artifact GitHub là ZIP bọc ngoài ZIP portable, nên có thể cần giải nén hai lần. Portable vẫn lưu cấu hình/key vào tài khoản người dùng khi bấm thiết lập. Chưa cấu hình chứng chỉ ký code/notarization. Muốn phân phối rộng rãi cần thêm chứng chỉ macOS/Windows vào CI. Bản macOS mặc định theo kiến trúc runner/máy build; dùng target phù hợp nếu cần Intel/Apple Silicon riêng.
 
 `npm run dev` mở bản xem trước web tại `http://127.0.0.1:1420`; chức năng ghi key/cấu hình bị khóa vì không có backend Tauri. Giao diện dùng font hệ thống, không tải font hoặc nội dung từ bên ngoài.
+
+## Linux
+
+Tải `HAC-Linux-x64-portable.tar.gz`, giải nén bằng `tar -xzf`, rồi chạy `./HAC-Linux-x64.AppImage` (hoặc `chmod +x` nếu công cụ giải nén mất quyền thực thi). Bản CI build trên Ubuntu 22.04; không bảo đảm chạy trên distro có glibc cũ hơn.
+
+Ubuntu/Debian: cài `libsecret-tools`, `gnome-keyring` (hoặc Secret Service tương thích) và FUSE 2 (`libfuse2` trên Ubuntu 22.04, `libfuse2t64` trên 24.04). Nếu không dùng FUSE, chạy AppImage với `--appimage-extract-and-run`. Kho khóa phải được mở khóa trong phiên desktop; không lưu key xuống file plaintext khi kho khóa lỗi. Arch: `libsecret`, `gnome-keyring`, `fuse2`.
+
+Build Linux từ source cần thêm GTK/WebKitGTK 4.1, libdbus, librsvg, appindicator và patchelf; danh sách Ubuntu nằm trong workflow. Chạy `npm run tauri -- build --bundles appimage`.
+
+Linux lưu key qua Secret Service, thêm block bash/zsh/fish đọc bằng `secret-tool`, tạo `$XDG_CONFIG_HOME/hac/environment.sh` và `autostart/hac-environment.desktop` (mặc định `~/.config`). Helper nạp key vào `systemd --user` khi đăng nhập; file không chứa key. Thay đổi này chỉ áp dụng cho tiến trình mới được systemd user tạo; không cập nhật môi trường của launcher/ứng dụng đã chạy hay mọi desktop. Với launcher không nhận key, mở Codex từ terminal mới. Nếu kho khóa chưa mở lúc autostart chạy, mở khóa rồi thiết lập lại; luôn mở lại Codex sau đăng nhập. HAC không sửa môi trường kích hoạt D-Bus.
+
+Gỡ HAC xóa credential, bỏ biến trong systemd user và khôi phục các file shell/autostart từ nhật ký. Tiến trình đang chạy vẫn giữ key cũ cho đến khi đóng. Không hỗ trợ WSL, Linux headless hoặc desktop không có systemd user. Kiểm tra trạng thái chỉ xác nhận file, kho khóa và môi trường manager; không xác minh môi trường của mọi ứng dụng.
 
 ## Sử dụng
 
@@ -42,7 +54,7 @@ HAC cập nhật các root setting yêu cầu, thay toàn bộ bảng `[model_pr
 - **Shell macOS:** thêm đoạn được đánh dấu HAC vào `.zshenv`, `.bashrc`, login file bash đang dùng và `fish/conf.d/hac.fish`. Các đoạn này đọc Keychain khi shell khởi tạo. Tôn trọng `ZDOTDIR`/`XDG_CONFIG_HOME` nếu HAC nhận được chúng; thư mục tùy chỉnh chỉ đặt bên trong shell mà không được truyền cho HAC không thể tự phát hiện. Keychain bị khóa hoặc từ chối quyền có thể làm bước nạp thất bại; mở khóa và bấm kiểm tra/thiết lập lại. LaunchAgent không đảm bảo thứ tự với các login app: nếu Codex tự mở quá sớm, mở lại sau khi đăng nhập.
 - **Windows:** lưu trong Credential Manager, đồng thời ghi chuỗi `HAC_API_KEY` vào `HKCU\Environment` và phát `WM_SETTINGCHANGE`. Bản trong Registry là plaintext theo thiết kế đã chọn, để Codex mở độc lập nhận được key. Không ghi HKLM, không cần Administrator. Tiến trình đã chạy giữ môi trường cũ; nếu Explorer/terminal chưa nhận thay đổi, đăng xuất rồi đăng nhập.
 
-Ứng dụng không ghi key mới vào TOML, script, plist hoặc log; không gửi key đến API. Key được xóa khỏi ô nhập ngay khi bắt đầu lưu. Rust hạn chế thời gian giữ key bằng `Zeroizing`; điều này không đảm bảo xóa mọi bản sao trong IPC/webview/hệ điều hành. Các bản sao lưu có thể chứa dữ liệu nhạy cảm đã có từ trước trong file của người dùng.
+Ứng dụng không ghi key mới vào TOML, script, plist, desktop entry hoặc log; không gửi key đến API. Key được xóa khỏi ô nhập ngay khi bắt đầu lưu. Rust hạn chế thời gian giữ key bằng `Zeroizing`; điều này không đảm bảo xóa mọi bản sao trong IPC/webview/hệ điều hành. Các bản sao lưu có thể chứa dữ liệu nhạy cảm đã có từ trước trong file của người dùng.
 
 ## Tính toàn vẹn và khôi phục
 
@@ -61,9 +73,11 @@ cargo test --manifest-path src-tauri/Cargo.toml --no-default-features
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
+Trên Linux có GNOME Keyring, chạy `bash scripts/test-linux-keyring.sh` để kiểm tra lưu/đọc/đổi/xóa key bằng keyring và secret-tool trong D-Bus riêng với dữ liệu XDG tạm ở `/tmp/hac-keyring.*`. Script không dùng kho khóa đang đăng nhập; không chạy trực tiếp test `--ignored` ngoài phiên cô lập.
+
 Core test dùng thư mục tạm và backend OS giả, không đụng kho khóa/môi trường thật. Có kiểm tra bảo toàn cấu hình, backup, key rotation, rollback từng bước, file lỗi, symlink, sửa đồng thời, IPC camelCase, key không xuất hiện trong kết quả, browser preview, khóa nút khi đang lưu và lỗi UI.
 
-Trước khi phát hành, kiểm thử thủ công trên **cả macOS và Windows** bằng tài khoản thử nghiệm: lần đầu, đổi key, từ chối Keychain, file read-only, TOML lỗi, mở lại terminal/Desktop, đăng xuất/đăng nhập và xác nhận endpoint thực tế. Kiểm tra shell zsh/bash/fish trên macOS; PowerShell/cmd trên Windows. Không in giá trị key trong log hoặc báo cáo kiểm thử.
+Trước khi phát hành, kiểm thử thủ công trên **macOS, Windows và Linux** bằng tài khoản thử nghiệm: lần đầu, đổi key, từ chối Keychain, file read-only, TOML lỗi, mở lại terminal/Desktop, đăng xuất/đăng nhập và xác nhận endpoint thực tế. Kiểm tra shell zsh/bash/fish và đăng nhập lại trên macOS/Linux; PowerShell/cmd trên Windows. Không in giá trị key trong log hoặc báo cáo kiểm thử.
 
 Tham chiếu cấu hình: [OpenAI Codex Configuration Reference](https://developers.openai.com/codex/config-reference/) (provider ở user-level; profile file nằm cạnh config chính). HAC là công cụ độc lập, không phải sản phẩm chính thức của OpenAI.
 
@@ -71,7 +85,7 @@ Tham chiếu cấu hình: [OpenAI Codex Configuration Reference](https://develop
 
 Source và lịch sử Git công khai không chứa domain thực. Không dùng tiền tố `VITE_` nên URL không bị đưa vào JavaScript frontend. URL vẫn được nhúng trong binary Rust và ghi vào config Codex; người có ứng dụng hoặc quyền đọc cấu hình/lưu lượng mạng vẫn có thể tìm thấy domain. `.env` không phải cơ chế giấu endpoint khỏi người dùng cuối.
 
-Đặt GitHub Actions secret `HAC_BASE_URL` trong repository để đóng gói ZIP portable với endpoint thực. CI kiểm thử với URL mẫu; bước đóng gói trên push/workflow_dispatch dùng secret, không chạy trên pull request. Nếu chưa có secret, workflow chỉ kiểm thử và bỏ qua đóng gói trên branch; build tag `v*` sẽ báo lỗi. Không tải artifact CI lên nơi công khai nếu không muốn domain có thể bị trích xuất từ binary.
+Đặt GitHub Actions secret `HAC_BASE_URL` trong repository để đóng gói portable với endpoint thực. CI kiểm thử với URL mẫu; bước đóng gói trên push/workflow_dispatch dùng secret, không chạy trên pull request. Nếu chưa có secret, workflow chỉ kiểm thử và bỏ qua đóng gói trên branch; build tag `v*` sẽ báo lỗi. Không tải artifact CI lên nơi công khai nếu không muốn domain có thể bị trích xuất từ binary.
 
 ## Phát hành bằng tag
 
@@ -82,11 +96,11 @@ git tag v0.1.1
 git push origin v0.1.1
 ```
 
-Workflow chờ cả ba job macOS arm64/x64 và Windows x64 thành công, rồi tạo GitHub Release cùng tag, sinh release notes và đính kèm ba ZIP portable. Tải ZIP trực tiếp từ Release chỉ cần giải nén một lần. Chạy lại workflow của tag sẽ cập nhật các asset cùng tên. Push branch, pull request và `workflow_dispatch` không tự tạo Release hoặc tự tăng phiên bản/tag.
+Workflow chờ cả bốn job macOS arm64/x64, Windows x64 và Linux x64 thành công, rồi tạo GitHub Release cùng tag, sinh release notes và đính kèm ba ZIP portable và một TAR.GZ AppImage. Tải ZIP trực tiếp từ Release chỉ cần giải nén một lần. Chạy lại workflow của tag sẽ cập nhật các asset cùng tên. Push branch, pull request và `workflow_dispatch` không tự tạo Release hoặc tự tăng phiên bản/tag.
 
 ## Gỡ thiết lập HAC
 
-Nút **Gỡ thiết lập HAC** yêu cầu xác nhận trước khi xóa key trong kho khóa, xóa biến môi trường user/launchctl, dừng LaunchAgent và khôi phục các file đã thay đổi. Bản mới lưu `.hac-restore.json` trong CODEX_HOME (quyền Unix 0600), chứa nội dung file trước/sau, đường dẫn backup và thư mục đã tạo; không chứa API key mới. Nội dung file cũ có thể đã chứa dữ liệu nhạy cảm, nên bảo vệ nhật ký như backup. Khi đổi key, vẫn giữ snapshot trước lần cài đầu tiên. Gỡ sẽ xóa nhật ký, backup được quản lý và thư mục do HAC tạo nếu còn rỗng. Giữ file khóa `.hac-setup.lock` để tránh race giữa các tiến trình; không tự xóa binary đang chạy hoặc dữ liệu WebView của hệ điều hành. Theme preference được xóa sau khi gỡ thành công.
+Nút **Gỡ thiết lập HAC** yêu cầu xác nhận trước khi xóa key trong kho khóa, xóa biến môi trường user/launchctl/systemd và gỡ cơ chế tự nạp và khôi phục các file đã thay đổi. Bản mới lưu `.hac-restore.json` trong CODEX_HOME (quyền Unix 0600), chứa nội dung file trước/sau, đường dẫn backup và thư mục đã tạo; không chứa API key mới. Nội dung file cũ có thể đã chứa dữ liệu nhạy cảm, nên bảo vệ nhật ký như backup. Khi đổi key, vẫn giữ snapshot trước lần cài đầu tiên. Gỡ sẽ xóa nhật ký, backup được quản lý và thư mục do HAC tạo nếu còn rỗng. Giữ file khóa `.hac-setup.lock` để tránh race giữa các tiến trình; không tự xóa binary đang chạy hoặc dữ liệu WebView của hệ điều hành. Theme preference được xóa sau khi gỡ thành công.
 
 Nếu file đã được sửa ngoài HAC, thao tác dừng trước khi xóa key; đối chiếu/khôi phục backup thủ công rồi thử lại. Mở ứng dụng với cùng CODEX_HOME/ZDOTDIR/XDG_CONFIG_HOME đã dùng khi thiết lập. Cấu hình từ bản cũ không có nhật ký: chỉ khôi phục backup duy nhất khi nội dung hiện tại khớp; nhiều backup hoặc chỉnh sửa mới sẽ chặn gỡ. Nếu không có backup, chỉ loại mục HAC xác định được; không thể tái tạo các giá trị trước đây (ví dụ memories/profile mặc định), nên không khẳng định khôi phục hoàn toàn. Bản mới yêu cầu gỡ bản cũ trước khi thiết lập lại để không tạo snapshot sai.
 

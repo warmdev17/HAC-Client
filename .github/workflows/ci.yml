@@ -23,6 +23,9 @@ jobs:
           - os: windows-latest
             artifact: HAC-Windows-x64-portable
             build_args: --no-bundle
+          - os: ubuntu-22.04
+            artifact: HAC-Linux-x64-portable
+            build_args: --bundles appimage
     runs-on: ${{ matrix.os }}
     env:
       HAC_BASE_URL: https://provider.example/v1
@@ -38,6 +41,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev libfuse2
       - run: npm ci
       - run: npm test
       - run: npm run build
@@ -82,11 +90,24 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent \
             src-tauri/target/release/bundle/macos/HAC.app \
             'portable/${{ matrix.artifact }}.zip'
+      - name: Package Linux AppImage
+        if: steps.packaging.outputs.enabled == 'true' && runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p portable
+          images=(src-tauri/target/release/bundle/appimage/*.AppImage)
+          test "${#images[@]}" -eq 1
+          test -f "${images[0]}"
+          cp "${images[0]}" portable/HAC-Linux-x64.AppImage
+          chmod +x portable/HAC-Linux-x64.AppImage
+          tar -czf 'portable/${{ matrix.artifact }}.tar.gz' -C portable HAC-Linux-x64.AppImage
       - uses: actions/upload-artifact@v4
         if: steps.packaging.outputs.enabled == 'true'
         with:
           name: ${{ matrix.artifact }}
-          path: portable/*.zip
+          path: |
+            portable/*.zip
+            portable/*.tar.gz
           compression-level: 0
           if-no-files-found: error
 
@@ -115,3 +136,4 @@ jobs:
             portable/HAC-Windows-x64-portable.zip
             portable/HAC-macOS-arm64-portable.zip
             portable/HAC-macOS-x64-portable.zip
+            portable/HAC-Linux-x64-portable.tar.gz

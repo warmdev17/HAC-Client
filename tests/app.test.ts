@@ -30,7 +30,7 @@ describe('HAC setup', () => {
     await tick();
     expect(document.querySelector('#os-note')!.textContent).toContain('Registry');
     expect(button('save').disabled).toBe(false);
-    invoke.mockResolvedValue({ ...empty, supported: false, platform: 'linux' });
+    invoke.mockResolvedValue({ ...empty, supported: false, platform: 'freebsd' });
     button('refresh').click(); await tick();
     expect(button('save').disabled).toBe(true);
     expect(document.querySelector('#platform')!.textContent).toContain('Chưa hỗ trợ');
@@ -112,4 +112,13 @@ it('requires confirmation before removing HAC and clears the entered key', async
   expect(invoke.mock.calls.filter(([name]) => name === 'uninstall')).toHaveLength(1);
   expect(input().value).toBe('');
   expect(document.querySelector('#message')!.textContent).toBe('Đã gỡ HAC.');
+});
+
+it('enables Linux setup and explains Secret Service and session limits', async () => {
+  const invoke = vi.fn().mockResolvedValue({ ...empty, platform: 'linux', codexHome: '/home/test/.codex' });
+  mount(document.querySelector('#app')!, { desktop: true, invoke }); await tick();
+  expect(button('save').disabled).toBe(false);
+  expect(button('remove').disabled).toBe(false);
+  expect(document.querySelector('#os-note')!.textContent).toContain('Secret Service');
+  expect(document.querySelector('#os-note')!.textContent).toContain('systemd');
 });
