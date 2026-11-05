@@ -14,7 +14,7 @@ use std::{
 struct Entry {
     path: PathBuf,
     before: Option<Vec<u8>>,
-    after: Vec<u8>,
+    after: Option<Vec<u8>>,
 }
 #[derive(Default, Serialize, Deserialize)]
 struct Journal {
@@ -44,18 +44,18 @@ pub fn journal_change(
     };
     for change in changes {
         if let Some(entry) = journal.entries.iter_mut().find(|e| e.path == change.path) {
-            if change.before.as_deref() != Some(entry.after.as_slice()) {
+            if change.before.as_deref() != entry.after.as_deref() {
                 return Err(format!(
                     "File đã được sửa ngoài HAC: {}. Khôi phục bản HAC trước khi thiết lập lại.",
                     change.path.display()
                 ));
             }
-            entry.after = change.after.clone();
+            entry.after = Some(change.after.clone());
         } else if change.changed() {
             journal.entries.push(Entry {
                 path: change.path.clone(),
                 before: change.before.clone(),
-                after: change.after.clone(),
+                after: Some(change.after.clone()),
             });
         }
     }
@@ -202,7 +202,7 @@ pub fn remove(system: &impl System, codex: &Path, user: &Path) -> Result<String,
                 return Err("Đường dẫn trong nhật ký không khớp môi trường hiện tại. Mở HAC với CODEX_HOME/ZDOTDIR/XDG_CONFIG_HOME đã dùng khi thiết lập.".into());
             }
             let current = files::read(&entry.path)?;
-            if current.as_deref() != Some(entry.after.as_slice()) && current != entry.before {
+            if current.as_deref() != entry.after.as_deref() && current != entry.before {
                 return Err(format!("File đã thay đổi sau khi thiết lập: {}. Chưa gỡ; đối chiếu backup để không mất chỉnh sửa mới.", entry.path.display()));
             }
             restores.push(Restore {
@@ -274,7 +274,11 @@ pub fn remove(system: &impl System, codex: &Path, user: &Path) -> Result<String,
                         change.after.clone()
                     }
                 };
-                if &expected != current {
+                // v0.1.1 generated medium at the root; accept only its exact historical rendering.
+                let legacy_medium = index == 0
+                    && config::render_with_effort(before_text, false, "medium")?.as_bytes()
+                        == current;
+                if &expected != current && !legacy_medium {
                     return Err(format!(
                         "{} đã được chỉnh sửa; chưa gỡ để tránh mất dữ liệu.",
                         change.path.display()
@@ -362,4 +366,116 @@ pub fn remove(system: &impl System, codex: &Path, user: &Path) -> Result<String,
     } else {
         "Đã gỡ key, biến môi trường, khôi phục file và xóa backup/nhật ký do phiên HAC này quản lý. Mở lại Codex và terminal."
     }.into())
+}
+
+/// Reset only config files; retain the pre-HAC baseline for a later uninstall.
+pub fn reset_configs(codex: &Path) -> Result<Vec<String>, String> {
+    let paths = [codex.join("config.toml"), codex.join("hac.config.toml")];
+    let journal_file = journal_path(codex);
+    let journal_bytes = files::read(&journal_file)?;
+    let mut journal = journal_bytes.as_deref().map(decode).transpose()?;
+    let mut restores = Vec::new();
+    for path in paths {
+        let current = files::read(&path)?;
+        if let Some(journal) = &mut journal {
+            if let Some(entry) = journal.entries.iter_mut().find(|e| e.path == path) {
+                entry.after = None;
+            }
+        }
+        restores.push(Restore {
+            path,
+            current,
+            original: None,
+        });
+    }
+    if let Some(journal) = journal {
+        restores.push(Restore {
+            path: journal_file,
+            current: journal_bytes,
+            original: Some(
+                serde_json::to_vec(&journal).map_err(|_| "Không cập nhật được nhật ký HAC")?,
+            ),
+        });
+    }
+    restores.retain(|r| r.current != r.original);
+    // Separate reset backups are never automatically deleted by uninstall.
+    let mut backups = Vec::new();
+    for restore in &restores {
+        if let Some(bytes) = &restore.current {
+            use std::io::Write;
+            let name = restore
+                .path
+                .file_name()
+                .ok_or("Tên file không hợp lệ")?
+                .to_string_lossy();
+            let mut backup = tempfile::Builder::new()
+                .prefix(&format!("{name}.hac-reset-backup-"))
+                .tempfile_in(codex)
+                .map_err(|_| "Không tạo được backup reset; chưa xóa cấu hình")?;
+            backup
+                .write_all(bytes)
+                .and_then(|_| backup.as_file().sync_all())
+                .map_err(|_| "Không ghi được backup reset; chưa xóa cấu hình")?;
+            let (_, path) = backup.keep().map_err(|_| "Không giữ được backup reset")?;
+            backups.push(path.display().to_string());
+        }
+    }
+    apply_reset(&restores)?;
+    Ok(backups)
+}
+
+fn apply_reset(restores: &[Restore]) -> Result<(), String> {
+    for (written, restore) in restores.iter().enumerate() {
+        let result = (|| {
+            if files::read(&restore.path)? != restore.current {
+                return Err("File vừa thay đổi trong lúc reset".into());
+            }
+            write_state(&restore.path, &restore.original)
+        })();
+        if let Err(error) = result {
+            let mut recovered = true;
+            for previous in restores[..written].iter().rev() {
+                recovered &= files::read(&previous.path).is_ok_and(|b| b == previous.original)
+                    && write_state(&previous.path, &previous.current).is_ok();
+            }
+            return Err(format!(
+                "{error}. {}",
+                if recovered {
+                    "Đã khôi phục file; backup reset được giữ cạnh file gốc."
+                } else {
+                    "Khôi phục chưa đầy đủ; dùng backup reset cạnh file gốc."
+                }
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::*;
+
+    #[test]
+    fn reset_rolls_back_prior_deletions_on_concurrent_change() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("config.toml");
+        let second = dir.path().join("hac.config.toml");
+        fs::write(&first, b"first").unwrap();
+        fs::write(&second, b"new edit").unwrap();
+        let restores = [
+            Restore {
+                path: first.clone(),
+                current: Some(b"first".to_vec()),
+                original: None,
+            },
+            Restore {
+                path: second.clone(),
+                current: Some(b"old".to_vec()),
+                original: None,
+            },
+        ];
+        assert!(apply_reset(&restores).is_err());
+        assert_eq!(fs::read(first).unwrap(), b"first");
+        assert_eq!(fs::read(second).unwrap(), b"new edit");
+    }
 }

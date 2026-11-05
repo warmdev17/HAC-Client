@@ -122,3 +122,53 @@ it('enables Linux setup and explains Secret Service and session limits', async (
   expect(document.querySelector('#os-note')!.textContent).toContain('Secret Service');
   expect(document.querySelector('#os-note')!.textContent).toContain('systemd');
 });
+
+it('confirms reset, clears secrets and reports backups without duplicate requests', async () => {
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
+  let finish!: (value: unknown) => void;
+  const invoke = vi.fn().mockImplementation((command: string) => command === 'get_status'
+    ? Promise.resolve(empty) : new Promise(resolve => { finish = resolve; }));
+  mount(document.querySelector('#app')!, { desktop: true, invoke }); await tick();
+  input().value = 'secret';
+  expect(button('reset')).not.toBeNull();
+  button('reset').click();
+  expect(document.querySelector<HTMLDialogElement>('#reset-dialog')!.open).toBe(true);
+  expect(invoke.mock.calls.filter(([name]) => name === 'reset_configs')).toHaveLength(0);
+  button('confirm-reset').click(); button('confirm-reset').click();
+  expect(input().value).toBe('');
+  expect(button('stop-apps').disabled).toBe(true);
+  expect(invoke.mock.calls.filter(([name]) => name === 'reset_configs')).toHaveLength(1);
+  finish({ backups: ['/tmp/reset-backup'], codexHome: empty.codexHome }); await tick();
+  expect(document.querySelector('#backups')!.textContent).toContain('/tmp/reset-backup');
+  expect(button('reset').disabled).toBe(false);
+});
+
+it('confirms desktop shutdown and recovers controls after a partial failure', async () => {
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
+  const invoke = vi.fn().mockImplementation((command: string) => command === 'get_status'
+    ? Promise.resolve(empty) : Promise.resolve({ stopped: 1, failed: 1 }));
+  mount(document.querySelector('#app')!, { desktop: true, invoke }); await tick();
+  expect(button('stop-apps')).not.toBeNull();
+  button('stop-apps').click();
+  expect(invoke.mock.calls.filter(([name]) => name === 'stop_desktop_apps')).toHaveLength(0);
+  button('confirm-stop').click(); await tick();
+  expect(invoke.mock.calls.filter(([name]) => name === 'stop_desktop_apps')).toHaveLength(1);
+  expect(document.querySelector('#feedback')!.classList.contains('error')).toBe(true);
+  expect(button('stop-apps').disabled).toBe(false);
+  invoke.mockRejectedValue('Không đọc được danh sách tiến trình');
+  button('stop-apps').click(); button('confirm-stop').click(); await tick();
+  expect(document.querySelector('#message')!.textContent).toContain('Không đọc được');
+  expect(button('save').disabled).toBe(false);
+});
+
+it('blocks maintenance commands in web previews', () => {
+  const invoke = vi.fn();
+  mount(document.querySelector('#app')!, { desktop: false, invoke });
+  expect(button('reset')).not.toBeNull();
+  expect(button('reset').disabled).toBe(true);
+  expect(button('stop-apps').disabled).toBe(true);
+  button('confirm-reset').click(); button('confirm-stop').click();
+  expect(invoke).not.toHaveBeenCalled();
+});

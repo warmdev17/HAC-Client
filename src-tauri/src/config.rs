@@ -23,10 +23,18 @@ fn table<'a>(parent: &'a mut Table, name: &str) -> Result<&'a mut Table, String>
 }
 
 pub fn render(input: &str, profile: bool) -> Result<String, String> {
+    render_with_effort(input, profile, "high")
+}
+
+pub(crate) fn render_with_effort(
+    input: &str,
+    profile: bool,
+    effort: &str,
+) -> Result<String, String> {
     let mut doc = parse(input)?;
     doc["model"] = value(MODEL);
     doc["model_provider"] = value("hac");
-    doc["model_reasoning_effort"] = value(if profile { "high" } else { "medium" });
+    doc["model_reasoning_effort"] = value(effort);
     if !profile {
         doc["forced_login_method"] = value("api");
         // A previously selected default profile could otherwise override these root values.
@@ -58,8 +66,7 @@ pub fn matches(input: &str, profile: bool) -> bool {
     };
     let root_ok = doc.get("model").and_then(Item::as_str) == Some(MODEL)
         && doc.get("model_provider").and_then(Item::as_str) == Some("hac")
-        && doc.get("model_reasoning_effort").and_then(Item::as_str)
-            == Some(if profile { "high" } else { "medium" });
+        && doc.get("model_reasoning_effort").and_then(Item::as_str) == Some("high");
     if profile {
         return root_ok;
     }
@@ -102,6 +109,18 @@ pub fn matches(input: &str, profile: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn base_config_uses_hac_without_profile_flag_and_matches_high_profile() {
+        let base: DocumentMut = render("", false).unwrap().parse().unwrap();
+        let profile: DocumentMut = render("", true).unwrap().parse().unwrap();
+        assert_eq!(base["model_provider"].as_str(), Some("hac"));
+        assert_eq!(base["model_reasoning_effort"].as_str(), Some("high"));
+        assert_eq!(
+            base["model_reasoning_effort"].as_str(),
+            profile["model_reasoning_effort"].as_str()
+        );
+        assert!(!base.contains_key("profile"));
+    }
     #[test]
     fn preserves_unrelated_settings_and_comments() {
         let input = "# user settings\napproval_policy = 'on-request'\nprofile = 'old'\n[projects.'/tmp/work']\ntrust_level = 'trusted'\n[model_providers.other]\nname = 'Other'\n[memories]\nmax_raw_memories_for_consolidation = 50\n";

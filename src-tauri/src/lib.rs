@@ -1,6 +1,7 @@
 pub mod config;
 pub mod files;
 pub mod platform;
+pub mod processes;
 pub mod uninstall;
 
 use files::Change;
@@ -318,6 +319,28 @@ pub async fn uninstall() -> Result<String, String> {
     }
 }
 
+pub async fn reset_configs() -> Result<SetupResult, String> {
+    let work = || {
+        let user = dirs::home_dir().ok_or("Không tìm được thư mục home")?;
+        let _lock = setup_lock(&user)?;
+        let codex = codex_home()?;
+        Ok(SetupResult {
+            backups: uninstall::reset_configs(&codex)?,
+            codex_home: codex.display().to_string(),
+        })
+    };
+    #[cfg(feature = "desktop")]
+    {
+        tauri::async_runtime::spawn_blocking(work)
+            .await
+            .map_err(|_| "Reset bị gián đoạn; kiểm tra backup cạnh cấu hình")?
+    }
+    #[cfg(not(feature = "desktop"))]
+    {
+        work()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -374,6 +397,111 @@ mod tests {
             self.step("activate")
         }
     }
+    #[test]
+    fn reset_backs_up_raw_configs_and_keeps_auth_history_and_environment() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path();
+        fs::write(home.join("config.toml"), b"not valid TOML \xff").unwrap();
+        fs::write(home.join("hac.config.toml"), "model = 'other'").unwrap();
+        fs::write(home.join("auth.json"), "auth untouched").unwrap();
+        fs::write(home.join("history.jsonl"), "history untouched").unwrap();
+        let backups = uninstall::reset_configs(home).unwrap();
+        assert_eq!(backups.len(), 2);
+        assert_eq!(fs::read(&backups[0]).unwrap(), b"not valid TOML \xff");
+        assert_eq!(fs::read_to_string(&backups[1]).unwrap(), "model = 'other'");
+        assert!(!home.join("config.toml").exists());
+        assert!(!home.join("hac.config.toml").exists());
+        assert_eq!(
+            fs::read_to_string(home.join("auth.json")).unwrap(),
+            "auth untouched"
+        );
+        assert_eq!(
+            fs::read_to_string(home.join("history.jsonl")).unwrap(),
+            "history untouched"
+        );
+        assert!(uninstall::reset_configs(home).unwrap().is_empty());
+    }
+
+    #[test]
+    fn reset_preserves_journal_for_reinstall_and_uninstall() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex = dir.path().join(".codex");
+        fs::create_dir(&codex).unwrap();
+        let original = "# original\nmodel = 'old'\n";
+        fs::write(codex.join("config.toml"), original).unwrap();
+        let system = MockSystem::default();
+        apply(
+            &system,
+            &codex,
+            dir.path(),
+            Zeroizing::new("key-one".into()),
+        )
+        .unwrap();
+        // Reset also accepts edits made outside HAC, retaining the original uninstall baseline.
+        fs::write(codex.join("config.toml"), "invalid TOML [").unwrap();
+        let backups = uninstall::reset_configs(&codex).unwrap();
+        assert_eq!(system.key().unwrap().as_deref(), Some("key-one"));
+        assert_eq!(system.environment().unwrap().as_deref(), Some("key-one"));
+        apply(
+            &system,
+            &codex,
+            dir.path(),
+            Zeroizing::new("key-two".into()),
+        )
+        .unwrap();
+        uninstall::remove(&system, &codex, dir.path()).unwrap();
+        assert_eq!(
+            fs::read_to_string(codex.join("config.toml")).unwrap(),
+            original
+        );
+        assert!(backups.iter().all(|p| std::path::Path::new(p).exists()));
+    }
+
+    #[test]
+    fn reset_updates_journal_when_configs_were_already_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let codex = dir.path().join(".codex");
+        let system = MockSystem::default();
+        apply(&system, &codex, dir.path(), Zeroizing::new("first".into())).unwrap();
+        fs::remove_file(codex.join("config.toml")).unwrap();
+        fs::remove_file(codex.join("hac.config.toml")).unwrap();
+        uninstall::reset_configs(&codex).unwrap();
+        apply(&system, &codex, dir.path(), Zeroizing::new("second".into())).unwrap();
+        uninstall::reset_configs(&codex).unwrap();
+        uninstall::remove(&system, &codex, dir.path()).unwrap();
+        assert!(!codex.join("config.toml").exists());
+        assert!(system.key().unwrap().is_none());
+    }
+
+    #[test]
+    fn reset_refuses_bad_journal_before_deleting_anything() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("config.toml"), "old config").unwrap();
+        fs::write(dir.path().join(".hac-restore.json"), "broken journal").unwrap();
+        assert!(uninstall::reset_configs(dir.path()).is_err());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+            "old config"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reset_refuses_symlink_before_deleting_anything() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("config.toml"), "old config").unwrap();
+        std::os::unix::fs::symlink(
+            dir.path().join("config.toml"),
+            dir.path().join("hac.config.toml"),
+        )
+        .unwrap();
+        assert!(uninstall::reset_configs(dir.path()).is_err());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("config.toml")).unwrap(),
+            "old config"
+        );
+    }
+
     #[test]
     fn linux_setup_rotation_removal_and_failed_setup_preserve_user_files() {
         for failure in [
@@ -576,7 +704,10 @@ mod tests {
         let original = "model = 'before-hac'\n";
         fs::write(
             codex.join("config.toml"),
-            config::render(original, false).unwrap(),
+            config::render(original, false).unwrap().replace(
+                "model_reasoning_effort = \"high\"",
+                "model_reasoning_effort = \"medium\"",
+            ),
         )
         .unwrap();
         fs::write(codex.join("config.toml.hac-backup-one"), original).unwrap();

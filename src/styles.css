@@ -154,3 +154,6 @@ button:focus-visible, summary:focus-visible, select:focus-visible { outline-colo
 /* WebView2 inserts its own reveal button unless this pseudo-element is hidden. */
 #api-key::-ms-reveal, #api-key::-ms-clear { display: none; }
 .danger { color: var(--red); margin-right: 12px; }
+
+.maintenance-actions { display: flex; flex-wrap: wrap; column-gap: 14px; }
+.maintenance-actions .danger { margin-right: 0; }

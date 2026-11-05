@@ -22,7 +22,7 @@ export function mount(app: HTMLElement, bridge: Bridge) {
           <label for="api-key">API key</label>
           <div class="key-input"><input id="api-key" name="api-key" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="key-help" placeholder="Dán API key của bạn" maxlength="4096" required disabled /><button type="button" id="toggle-key" class="icon-button" aria-label="Hiện API key" aria-pressed="false">${eye}</button></div>
           <p id="key-help" class="field-help">Lưu trong Keychain, Credential Manager hoặc Secret Service. Key không được ghi vào file TOML.</p>
-          <dl class="connection-details"><div><dt>Provider</dt><dd>HAC <span class="muted">/ Responses API</span></dd></div><div><dt>Base URL</dt><dd><span>Được cấu hình trong bản HAC này</span></dd></div><div><dt>Model</dt><dd><code>gpt-6-astra</code></dd></div><div><dt>Reasoning</dt><dd><span>Mặc định <strong>medium</strong></span><span>Profile hac <strong>high</strong></span></dd></div></dl>
+          <dl class="connection-details"><div><dt>Provider</dt><dd>HAC <span class="muted">/ Responses API</span></dd></div><div><dt>Base URL</dt><dd><span>Được cấu hình trong bản HAC này</span></dd></div><div><dt>Model</dt><dd><code>gpt-6-astra</code></dd></div><div><dt>Reasoning</dt><dd><span>Mặc định <strong>high</strong></span><span>Profile hac <strong>high</strong></span></dd></div></dl>
           <div id="os-note" class="os-note">Windows dùng môi trường user; macOS dùng Keychain; Linux dùng Secret Service và systemd user.</div>
           <div class="actions"><button class="primary" id="save" type="submit" disabled>Lưu và thiết lập HAC</button><button class="secondary" id="clear" type="button">Xóa ô nhập</button></div>
           <p class="local-note">Chỉ áp dụng trên máy này. Không gửi yêu cầu đến API.</p>
@@ -35,10 +35,13 @@ export function mount(app: HTMLElement, bridge: Bridge) {
         <button id="refresh" class="secondary refresh" type="button" ${bridge.desktop ? '' : 'disabled'}>Kiểm tra cấu hình</button>
         <div class="location"><span>Thư mục cấu hình</span><code id="codex-home">Chưa xác định</code><small>Tự nhận CODEX_HOME nếu đã đặt.</small></div>
         <button id="remove" type="button" class="secondary danger" disabled>Gỡ thiết lập HAC</button>
+        <div class="maintenance-actions"><button id="reset" type="button" class="secondary danger" disabled>Reset cấu hình Codex</button><button id="stop-apps" type="button" class="secondary" disabled>Dừng ChatGPT & Codex</button></div>
         <button id="show-info" type="button" class="secondary">Các thay đổi khi thiết lập</button>
       </aside></div>
       <section id="feedback" class="feedback" aria-live="polite" aria-atomic="true" hidden><p id="message"></p><button id="show-result" class="secondary" type="button">Xem chi tiết</button></section>
       <dialog id="remove-dialog" aria-labelledby="remove-title"><h2 id="remove-title">Gỡ thiết lập HAC?</h2><p>Xóa API key của HAC trong kho khóa và biến môi trường, gỡ cơ chế tự nạp, khôi phục file từ nhật ký/backup và xóa backup được quản lý. Không xóa Codex, hội thoại hoặc dự án.</p><p>File đã sửa thêm sẽ chặn thao tác để tránh mất dữ liệu. Với bản HAC cũ thiếu nhật ký, chỉ gỡ những mục xác định được. Đóng Codex và terminal trước khi gỡ.</p><form method="dialog"><button id="cancel-remove" class="secondary" autofocus>Hủy</button> <button id="confirm-remove" type="button" class="primary">Gỡ thiết lập</button></form></dialog>
+      <dialog id="reset-dialog" aria-labelledby="reset-title"><h2 id="reset-title">Reset cấu hình Codex?</h2><p>Sao lưu rồi xóa config.toml và hac.config.toml, kể cả cấu hình không do HAC tạo. Backup được giữ cạnh file gốc; xem đường dẫn sau khi reset.</p><p>Giữ đăng nhập, hội thoại, API key và biến môi trường. Đóng ứng dụng trước khi reset để tránh ghi lại cấu hình cũ. Sau đó bấm Lưu và thiết lập HAC nếu muốn dùng lại HAC.</p><form method="dialog"><button class="secondary" autofocus>Hủy</button> <button id="confirm-reset" type="button" class="primary">Sao lưu và reset</button></form></dialog>
+      <dialog id="stop-dialog" aria-labelledby="stop-title"><h2 id="stop-title">Dừng ChatGPT và Codex Desktop?</h2><p>Buộc dừng hai ứng dụng và tiến trình hỗ trợ thuộc bản cài Desktop trong tài khoản này. Tác vụ đang chạy sẽ bị ngắt; nội dung chưa lưu có thể mất.</p><p>Không dừng Codex CLI độc lập hoặc trình duyệt. Sau khi thiết lập xong, tự mở lại ứng dụng để nạp cấu hình mới.</p><form method="dialog"><button class="secondary" autofocus>Hủy</button> <button id="confirm-stop" type="button" class="primary">Dừng cả hai ứng dụng</button></form></dialog>
       <dialog id="info-dialog" aria-labelledby="info-title"><h2 id="info-title">Các thay đổi khi thiết lập</h2>        <p>Sao lưu file cũ cạnh file gốc trước khi cập nhật. Giữ cài đặt không liên quan; thay provider HAC và bỏ profile mặc định cũ để cấu hình mới có hiệu lực.</p><p>Trên macOS: tạo LaunchAgent và thêm đoạn nạp key vào zsh, bash, fish. Trên Windows: đặt biến môi trường cấp người dùng. Trên Linux: Secret Service, shell và XDG autostart nạp vào systemd user. Không cần quyền admin.</p>
 <form method="dialog"><button class="primary">Đóng</button></form></dialog>
       <dialog id="result-dialog" aria-labelledby="result-title"><h2 id="result-title">Chi tiết thiết lập</h2><p id="full-message"></p><ul id="issues"></ul><section id="backup-details" hidden><h3>Các bản sao lưu</h3><ul id="backups"></ul></section><form method="dialog"><button class="primary">Đóng</button></form></dialog>
@@ -64,7 +67,7 @@ export function mount(app: HTMLElement, bridge: Bridge) {
 
   function controls() {
     const supported = bridge.desktop && status?.supported === true;
-    el<HTMLButtonElement>('remove').disabled = busy || !supported;
+    for (const id of ['remove', 'reset', 'stop-apps']) el<HTMLButtonElement>(id).disabled = busy || !supported;
     input.disabled = busy || !supported;
     save.disabled = busy || !supported;
     refresh.disabled = busy || !bridge.desktop;
@@ -159,6 +162,37 @@ export function mount(app: HTMLElement, bridge: Bridge) {
     } catch (error) { message(errorText(error), true); }
     finally { busy = false; controls(); }
   });
+  for (const [button, dialog, confirm, command] of [
+    ['reset', 'reset-dialog', 'confirm-reset', 'reset_configs'],
+    ['stop-apps', 'stop-dialog', 'confirm-stop', 'stop_desktop_apps'],
+  ]) {
+    el(button).addEventListener('click', () => {
+      if (!busy && bridge.desktop && status?.supported) el<HTMLDialogElement>(dialog).showModal();
+    });
+    el(confirm).addEventListener('click', async () => {
+      if (busy || !bridge.desktop || !status?.supported || !el<HTMLDialogElement>(dialog).open) return;
+      el<HTMLDialogElement>(dialog).close();
+      busy = true; controls(); clearKey();
+      el('issues').replaceChildren(); el('backups').replaceChildren(); el('backup-details').hidden = true;
+      message(command === 'reset_configs' ? 'Đang sao lưu và reset cấu hình…' : 'Đang dừng ứng dụng Desktop…');
+      try {
+        if (command === 'reset_configs') {
+          const result = await bridge.invoke<SetupResult>(command);
+          el('backups').replaceChildren(...result.backups.map(path => { const li = document.createElement('li'); li.textContent = path; return li; }));
+          el('backup-details').hidden = result.backups.length === 0;
+          message(result.backups.length ? 'Đã sao lưu và reset hai file cấu hình. Đăng nhập, hội thoại và API key được giữ nguyên. Xem chi tiết để lấy đường dẫn backup.' : 'Không có file cấu hình cần reset.');
+          try { await readStatus(); } catch { message('Đã reset nhưng chưa đọc lại được trạng thái. Backup nằm trong phần chi tiết.', true); }
+        } else {
+          const result = await bridge.invoke<{ stopped: number; failed: number }>(command);
+          message(result.failed
+            ? `Đã dừng ${result.stopped} tiến trình; ${result.failed} tiến trình chưa dừng được. Kiểm tra ứng dụng trước khi mở lại.`
+            : result.stopped ? `Đã dừng ${result.stopped} tiến trình Desktop. Mở lại ChatGPT/Codex sau khi thiết lập để nạp cấu hình mới.`
+              : 'Không nhận diện được ChatGPT/Codex Desktop đang chạy trong tài khoản này. Bản cài không chuẩn có thể cần đóng thủ công.', result.failed > 0);
+        }
+      } catch (error) { message(errorText(error), true); }
+      finally { busy = false; controls(); }
+    });
+  }
   refresh.addEventListener('click', async () => {
     if (busy) return;
     busy = true; controls();

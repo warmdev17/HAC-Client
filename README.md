@@ -40,7 +40,7 @@ Gỡ HAC xóa credential, bỏ biến trong systemd user và khôi phục các f
 1. Mở HAC trong tài khoản người dùng thông thường.
 2. Nhập API key và bấm **Lưu và thiết lập HAC**. Cửa sổ Keychain của macOS có thể yêu cầu quyền.
 3. Xem kết quả và đường dẫn bản sao lưu. Đóng hoàn toàn Codex Desktop và terminal, sau đó mở lại. Không tự đóng ứng dụng hoặc dừng công việc đang chạy.
-4. Dùng `codex` với reasoning `medium`, hoặc `codex --profile hac` với reasoning `high`.
+4. Dùng `codex` để nhận provider HAC và reasoning `high` trực tiếp từ `config.toml`, không cần alias hoặc `--profile`. `codex --profile hac` vẫn dùng được; profile mặc định cũng là `high`. Thiết lập lại bằng bản HAC mới để cập nhật file đang dùng.
 
 HAC đọc `CODEX_HOME` từ môi trường của chính tiến trình HAC nếu đã đặt (phải là đường dẫn tuyệt đối); mặc định là `~/.codex`, tương ứng `%USERPROFILE%\.codex` trên Windows. Nếu CLI/Desktop/HAC được mở với các giá trị `CODEX_HOME` khác nhau, hãy thống nhất chúng trước. HAC không cài Codex và không thay đổi `auth.json`.
 
@@ -97,6 +97,15 @@ git push origin v0.1.1
 ```
 
 Workflow chờ cả bốn job macOS arm64/x64, Windows x64 và Linux x64 thành công, rồi tạo GitHub Release cùng tag, sinh release notes và đính kèm ba ZIP portable và một TAR.GZ AppImage. Tải ZIP trực tiếp từ Release chỉ cần giải nén một lần. Chạy lại workflow của tag sẽ cập nhật các asset cùng tên. Push branch, pull request và `workflow_dispatch` không tự tạo Release hoặc tự tăng phiên bản/tag.
+
+## Reset cấu hình và dừng ứng dụng
+
+- **Reset cấu hình Codex:** xác nhận rồi sao lưu và xóa đúng `config.toml`, `hac.config.toml` tại CODEX_HOME đang hiển thị, kể cả TOML lỗi hoặc cấu hình không do HAC tạo. Không xóa auth, hội thoại, credential, shell hoặc biến môi trường. Backup `*.hac-reset-backup-*` được giữ cạnh file gốc (quyền Unix 0600); xem đường dẫn trong Chi tiết. Nhật ký HAC được sao lưu/cập nhật để thiết lập lại hoặc gỡ vẫn hoạt động. Gỡ HAC sau đó vẫn khôi phục baseline trước HAC; không tự xóa backup reset. Khi cần phục hồi thủ công, đóng Codex rồi chép backup tương ứng về tên file gốc; nếu khôi phục cả trạng thái trước reset thì khôi phục cả nhật ký từ backup cùng lần.
+- **Dừng ChatGPT & Codex:** xác nhận trước khi buộc dừng ứng dụng Desktop trong tài khoản hiện tại và các tiến trình con nằm trong thư mục ứng dụng. Tác vụ đang chạy bị ngắt, nội dung chưa lưu có thể mất. Không tự mở lại ứng dụng. Không nhắm tới CLI độc lập, trình duyệt hoặc tiến trình tổ tiên của HAC. Dùng nhận diện đường dẫn bundle macOS, package/installation Windows, và executable cạnh `resources/app.asar` trên Linux; bản cài không chuẩn hoặc thiếu quyền đọc process có thể cần đóng thủ công. Số đếm là số tiến trình dừng được, không phải số cửa sổ.
+
+Đóng ứng dụng trước khi reset, sau đó **Lưu và thiết lập HAC**, rồi tự mở lại ChatGPT/Codex. Thao tác reset có backup và rollback khi gặp lỗi; mất điện/kill HAC giữa chừng có thể cần phục hồi từ backup. Không dùng bản HAC cũ để thao tác trên nhật ký đã reset (trạng thái file đã xóa dùng `after: null`).
+
+Theo [OpenAI Docs — Profiles](https://developers.openai.com/codex/config-advanced/#profiles), Codex 0.134.0+ không còn hỗ trợ root `profile = "hac"`. Đặt giá trị chung ở `config.toml` để CLI dùng tự động; mặc định `high` này cũng áp dụng cho Desktop, trừ khi bị override.
 
 ## Gỡ thiết lập HAC
 
